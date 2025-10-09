@@ -1,0 +1,507 @@
+const { executeQuery, executeTransaction } = require('../config/database');
+const TradingAccount = require('../models/TradingAccount');
+
+class FundManager {
+  
+  /**
+   * Calculate real-time P&L for a position
+   * @param {Object} position - Position object with open_price, lot_size, side
+   * @param {number} currentPrice - Current market price
+   * @param {Object} symbolInfo - Symbol information with contract_size, pip_size
+   * @returns {number} Profit/Loss amount (gross, before commission/swap)
+   */
+  static calculatePositionPnL(position, currentPrice, symbolInfo) {
+    const { open_price, lot_size, side } = position;
+    const contractSize = symbolInfo?.contract_size || 100000; // Standard lot size
+    
+    if (!currentPrice || currentPrice <= 0 || !open_price || open_price <= 0) {
+      return 0;
+    }
+    
+    let pnl = 0;
+    if (side === 'buy') {
+      pnl = (currentPrice - open_price) * lot_size * contractSize;
+    } else {
+      pnl = (open_price - currentPrice) * lot_size * contractSize;
+    }
+    
+    return Math.round(pnl * 100) / 100; // Round to 2 decimal places
+  }
+
+  /**
+   * Calculate net P&L including commission and swap
+   * @param {Object} position - Position object
+   * @param {number} currentPrice - Current market price
+   * @param {Object} symbolInfo - Symbol information
+   * @returns {number} Net profit/loss
+   */
+  static calculateNetPositionPnL(position, currentPrice, symbolInfo) {
+    const grossPnL = this.calculatePositionPnL(position, currentPrice, symbolInfo);
+    const commission = position.commission || 0;
+    const swap = position.swap || 0;
+    
+    return grossPnL - commission - swap;
+  }
+
+  /**
+   * Update account balance when closing a position
+   * @param {number} accountId - Trading account ID
+   * @param {number} profit - Profit/Loss amount
+   * @param {number} positionId - Position ID for reference
+   * @param {string} changeType - Type of balance change
+   * @returns {Object} Updated account balance info
+   */
+  static async updateAccountBalance(accountId, profit, positionId, changeType = 'trade_profit') {
+    return executeTransaction(async (connection) => {
+      // Get current account balance
+      const [accountRows] = await connection.execute(
+        'SELECT balance, equity, free_margin FROM trading_accounts WHERE id = ?',
+        [accountId]
+      );
+      
+      if (accountRows.length === 0) {
+        throw new Error('Trading account not found');
+      }
+      
+      const currentBalance = parseFloat(accountRows[0].balance);
+      const newBalance = currentBalance + profit;
+      
+      // Update account balance
+      await connection.execute(
+        `UPDATE trading_accounts 
+         SET balance = ?, equity = ?, free_margin = ?, updated_at = NOW() 
+         WHERE id = ?`,
+        [newBalance, newBalance, newBalance, accountId]
+      );
+      
+      // Record balance history
+      await connection.execute(
+        `INSERT INTO account_balance_history 
+         (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          accountId,
+          currentBalance,
+          newBalance,
+          profit,
+          profit >= 0 ? 'trade_profit' : 'trade_loss',
+          positionId,
+          'position',
+          `Position ${profit >= 0 ? 'profit' : 'loss'}: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`
+        ]
+      );
+      
+      return {
+        previousBalance: currentBalance,
+        newBalance: newBalance,
+        change: profit,
+        changeType: profit >= 0 ? 'profit' : 'loss'
+      };
+    });
+  }
+
+  /**
+   * Calculate comprehensive position statistics for an account
+   * @param {number} accountId - Trading account ID
+   * @param {Array} positions - Array of position objects with current prices
+   * @returns {Object} Position statistics
+   */
+  static calculatePositionStatistics(accountId, positions = []) {
+    const openPositions = positions.filter(p => p.status === 'open');
+    const closedPositions = positions.filter(p => p.status === 'closed');
+    
+    // Calculate totals
+    const totalPositions = positions.length;
+    const totalPnL = positions.reduce((sum, p) => sum + (p.profit || 0), 0);
+    const totalProfit = positions.filter(p => (p.profit || 0) > 0)
+                              .reduce((sum, p) => sum + p.profit, 0);
+    const totalLoss = Math.abs(positions.filter(p => (p.profit || 0) < 0)
+                                       .reduce((sum, p) => sum + p.profit, 0));
+    
+    // Calculate performance metrics
+    const winningTrades = closedPositions.filter(p => (p.profit || 0) > 0);
+    const losingTrades = closedPositions.filter(p => (p.profit || 0) <= 0);
+    const winRate = closedPositions.length > 0 ? (winningTrades.length / closedPositions.length) * 100 : 0;
+    
+    // Calculate averages
+    const avgWin = winningTrades.length > 0 ? totalProfit / winningTrades.length : 0;
+    const avgLoss = losingTrades.length > 0 ? totalLoss / losingTrades.length : 0;
+    const avgTrade = closedPositions.length > 0 ? (totalProfit - totalLoss) / closedPositions.length : 0;
+    
+    // Calculate costs
+    const totalCommission = positions.reduce((sum, p) => sum + (p.commission || 0), 0);
+    const totalSwap = positions.reduce((sum, p) => sum + (p.swap || 0), 0);
+    
+    // Calculate exposure
+    const currentExposure = openPositions.reduce((sum, p) => {
+      return sum + ((p.lotSize || 0) * (p.currentPrice || p.openPrice || 0));
+    }, 0);
+    
+    const unrealizedPnL = openPositions.reduce((sum, p) => sum + (p.profit || 0), 0);
+    
+    return {
+      totalPositions,
+      openPositions: openPositions.length,
+      closedPositions: closedPositions.length,
+      
+      // P&L Statistics
+      totalPnL,
+      totalProfit,
+      totalLoss,
+      netProfit: totalPnL - totalCommission - totalSwap,
+      
+      // Performance Metrics
+      winningTrades: winningTrades.length,
+      losingTrades: losingTrades.length,
+      winRate,
+      
+      // Averages
+      avgWin,
+      avgLoss,
+      avgTrade,
+      
+      // Risk Metrics
+      profitFactor: totalLoss > 0 ? totalProfit / totalLoss : (totalProfit > 0 ? 999 : 0),
+      
+      // Costs
+      totalCommission,
+      totalSwap,
+      
+      // Current Exposure
+      currentExposure,
+      unrealizedPnL
+    };
+  }
+
+  /**
+   * Process deposit transaction
+   * @param {number} accountId - Trading account ID
+   * @param {number} amount - Deposit amount
+   * @param {string} method - Payment method
+   * @param {string} transactionId - External transaction ID
+   * @returns {Object} Transaction result
+   */
+  static async processDeposit(accountId, amount, method = 'bank_transfer', transactionId = null) {
+    return executeTransaction(async (connection) => {
+      // Get current balance
+      const [accountRows] = await connection.execute(
+        'SELECT balance, equity, free_margin FROM trading_accounts WHERE id = ?',
+        [accountId]
+      );
+      
+      if (accountRows.length === 0) {
+        throw new Error('Trading account not found');
+      }
+      
+      const currentBalance = parseFloat(accountRows[0].balance);
+      const newBalance = currentBalance + amount;
+      
+      // Update account balance
+      await connection.execute(
+        `UPDATE trading_accounts 
+         SET balance = ?, equity = ?, free_margin = ?, updated_at = NOW() 
+         WHERE id = ?`,
+        [newBalance, newBalance, newBalance, accountId]
+      );
+      
+      // Record balance history
+      await connection.execute(
+        `INSERT INTO account_balance_history 
+         (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          accountId,
+          currentBalance,
+          newBalance,
+          amount,
+          'deposit',
+          transactionId,
+          'deposit_transaction',
+          `Deposit via ${method}: +$${amount.toFixed(2)}`
+        ]
+      );
+      
+      return {
+        success: true,
+        previousBalance: currentBalance,
+        newBalance: newBalance,
+        depositAmount: amount,
+        method: method,
+        transactionId: transactionId
+      };
+    });
+  }
+
+  /**
+   * Process withdrawal transaction
+   * @param {number} accountId - Trading account ID
+   * @param {number} amount - Withdrawal amount
+   * @param {string} method - Payment method
+   * @param {string} transactionId - External transaction ID
+   * @returns {Object} Transaction result
+   */
+  static async processWithdrawal(accountId, amount, method = 'bank_transfer', transactionId = null) {
+    return executeTransaction(async (connection) => {
+      // Get current balance
+      const [accountRows] = await connection.execute(
+        'SELECT balance, equity, free_margin FROM trading_accounts WHERE id = ? AND status = "active"',
+        [accountId]
+      );
+      
+      if (accountRows.length === 0) {
+        throw new Error('Trading account not found or inactive');
+      }
+      
+      const currentBalance = parseFloat(accountRows[0].balance);
+      
+      // Check if sufficient funds
+      if (currentBalance < amount) {
+        throw new Error('Insufficient funds for withdrawal');
+      }
+      
+      const newBalance = currentBalance - amount;
+      
+      // Update account balance
+      await connection.execute(
+        `UPDATE trading_accounts 
+         SET balance = ?, equity = ?, free_margin = ?, updated_at = NOW() 
+         WHERE id = ?`,
+        [newBalance, newBalance, newBalance, accountId]
+      );
+      
+      // Record balance history
+      await connection.execute(
+        `INSERT INTO account_balance_history 
+         (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          accountId,
+          currentBalance,
+          newBalance,
+          -amount,
+          'withdrawal',
+          transactionId,
+          'withdrawal_transaction',
+          `Withdrawal via ${method}: -$${amount.toFixed(2)}`
+        ]
+      );
+      
+      return {
+        success: true,
+        previousBalance: currentBalance,
+        newBalance: newBalance,
+        withdrawalAmount: amount,
+        method: method,
+        transactionId: transactionId
+      };
+    });
+  }
+
+  /**
+   * Get account balance history with pagination
+   * @param {number} accountId - Trading account ID
+   * @param {number} limit - Number of records to fetch
+   * @param {number} offset - Offset for pagination
+   * @returns {Array} Balance history records
+   */
+  static async getBalanceHistory(accountId, limit = 50, offset = 0) {
+    // Use string interpolation for LIMIT and OFFSET since MySQL doesn't support them as parameters
+    const query = `
+      SELECT 
+        abh.*,
+        DATE_FORMAT(abh.created_at, '%Y-%m-%d %H:%i:%s') as formatted_date
+      FROM account_balance_history abh
+      WHERE abh.account_id = ?
+      ORDER BY abh.created_at DESC
+      LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}
+    `;
+    
+    const rows = await executeQuery(query, [accountId]);
+    
+    return rows.map(row => ({
+      ...row,
+      change_amount: parseFloat(row.change_amount),
+      previous_balance: parseFloat(row.previous_balance),
+      new_balance: parseFloat(row.new_balance)
+    }));
+  }
+
+  /**
+   * Calculate account statistics
+   * @param {number} accountId - Trading account ID
+   * @returns {Object} Account statistics
+   */
+  static async getAccountStatistics(accountId) {
+    // Get total deposits
+    const [depositResult] = await executeQuery(
+      `SELECT COALESCE(SUM(change_amount), 0) as total_deposits 
+       FROM account_balance_history 
+       WHERE account_id = ? AND change_type = 'deposit'`,
+      [accountId]
+    );
+    
+    // Get total withdrawals
+    const [withdrawalResult] = await executeQuery(
+      `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_withdrawals 
+       FROM account_balance_history 
+       WHERE account_id = ? AND change_type = 'withdrawal'`,
+      [accountId]
+    );
+    
+    // Get trading P&L
+    const [pnlResult] = await executeQuery(
+      `SELECT 
+        COALESCE(SUM(CASE WHEN change_type = 'trade_profit' THEN change_amount ELSE 0 END), 0) as total_profit,
+        COALESCE(SUM(CASE WHEN change_type = 'trade_loss' THEN ABS(change_amount) ELSE 0 END), 0) as total_loss
+       FROM account_balance_history 
+       WHERE account_id = ? AND change_type IN ('trade_profit', 'trade_loss')`,
+      [accountId]
+    );
+    
+    // Get current balance
+    const [balanceResult] = await executeQuery(
+      'SELECT balance FROM trading_accounts WHERE id = ?',
+      [accountId]
+    );
+    
+    const totalDeposits = parseFloat(depositResult.total_deposits);
+    const totalWithdrawals = parseFloat(withdrawalResult.total_withdrawals);
+    const totalProfit = parseFloat(pnlResult.total_profit);
+    const totalLoss = parseFloat(pnlResult.total_loss);
+    const currentBalance = parseFloat(balanceResult?.balance || 0);
+    
+    const netDeposits = totalDeposits - totalWithdrawals;
+    const tradingPnL = totalProfit - totalLoss;
+    const totalReturn = netDeposits > 0 ? ((currentBalance - netDeposits) / netDeposits) * 100 : 0;
+    
+    return {
+      currentBalance,
+      totalDeposits,
+      totalWithdrawals,
+      netDeposits,
+      totalProfit,
+      totalLoss,
+      tradingPnL,
+      totalReturn: Math.round(totalReturn * 100) / 100,
+      profitFactor: totalLoss > 0 ? Math.round((totalProfit / totalLoss) * 100) / 100 : totalProfit > 0 ? 999 : 0
+    };
+  }
+
+  /**
+   * Calculate net P&L including commission and swap
+   * @param {Object} position - Position object
+   * @param {number} currentPrice - Current market price
+   * @param {Object} symbolInfo - Symbol information
+   * @returns {number} Net profit/loss
+   */
+  static calculateNetPositionPnL(position, currentPrice, symbolInfo) {
+    const grossPnL = this.calculatePositionPnL(position, currentPrice, symbolInfo);
+    const commission = position.commission || 0;
+    const swap = position.swap || 0;
+    
+    return grossPnL - commission - swap;
+  }
+
+  /**
+   * Calculate comprehensive position statistics for an account
+   * @param {number} accountId - Trading account ID
+   * @param {Array} positions - Array of position objects with current prices
+   * @returns {Object} Position statistics
+   */
+  static calculatePositionStatistics(accountId, positions = []) {
+    const openPositions = positions.filter(p => p.status === 'open');
+    const closedPositions = positions.filter(p => p.status === 'closed');
+    
+    // Calculate totals
+    const totalPositions = positions.length;
+    const totalPnL = positions.reduce((sum, p) => sum + (p.profit || 0), 0);
+    const totalProfit = positions.filter(p => (p.profit || 0) > 0)
+                              .reduce((sum, p) => sum + p.profit, 0);
+    const totalLoss = Math.abs(positions.filter(p => (p.profit || 0) < 0)
+                                       .reduce((sum, p) => sum + p.profit, 0));
+    
+    // Calculate performance metrics
+    const winningTrades = closedPositions.filter(p => (p.profit || 0) > 0);
+    const losingTrades = closedPositions.filter(p => (p.profit || 0) <= 0);
+    const winRate = closedPositions.length > 0 ? (winningTrades.length / closedPositions.length) * 100 : 0;
+    
+    // Calculate averages
+    const avgWin = winningTrades.length > 0 ? totalProfit / winningTrades.length : 0;
+    const avgLoss = losingTrades.length > 0 ? totalLoss / losingTrades.length : 0;
+    const avgTrade = closedPositions.length > 0 ? (totalProfit - totalLoss) / closedPositions.length : 0;
+    
+    // Calculate costs
+    const totalCommission = positions.reduce((sum, p) => sum + (p.commission || 0), 0);
+    const totalSwap = positions.reduce((sum, p) => sum + (p.swap || 0), 0);
+    
+    // Calculate exposure
+    const currentExposure = openPositions.reduce((sum, p) => {
+      return sum + ((p.lotSize || 0) * (p.currentPrice || p.openPrice || 0));
+    }, 0);
+    
+    const unrealizedPnL = openPositions.reduce((sum, p) => sum + (p.profit || 0), 0);
+    
+    return {
+      totalPositions,
+      openPositions: openPositions.length,
+      closedPositions: closedPositions.length,
+      
+      // P&L Statistics
+      totalPnL,
+      totalProfit,
+      totalLoss,
+      netProfit: totalPnL - totalCommission - totalSwap,
+      
+      // Performance Metrics
+      winningTrades: winningTrades.length,
+      losingTrades: losingTrades.length,
+      winRate,
+      
+      // Averages
+      avgWin,
+      avgLoss,
+      avgTrade,
+      
+      // Risk Metrics
+      profitFactor: totalLoss > 0 ? totalProfit / totalLoss : (totalProfit > 0 ? 999 : 0),
+      
+      // Costs
+      totalCommission,
+      totalSwap,
+      
+      // Current Exposure
+      currentExposure,
+      unrealizedPnL
+    };
+  }
+
+  /**
+   * Update position P&L with current market price
+   * @param {number} positionId - Position ID
+   * @param {number} currentPrice - Current market price
+   * @param {number} calculatedPnL - Calculated P&L
+   * @returns {Object} Update result
+   */
+  static async updatePositionPnL(positionId, currentPrice, calculatedPnL) {
+    try {
+      await executeQuery(
+        `UPDATE positions 
+         SET current_price = ?, profit = ?, updated_at = NOW() 
+         WHERE id = ? AND status = 'open'`,
+        [currentPrice, calculatedPnL, positionId]
+      );
+      
+      return {
+        success: true,
+        positionId,
+        currentPrice,
+        profit: calculatedPnL
+      };
+    } catch (error) {
+      console.error('Error updating position P&L:', error);
+      throw error;
+    }
+  }
+}
+
+module.exports = FundManager;

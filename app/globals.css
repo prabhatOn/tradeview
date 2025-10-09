@@ -1,0 +1,353 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Light theme - white and shades of white backgrounds, gradient borders only */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --font-inter: "Inter", sans-serif;
+  --font-poppins: "Poppins", sans-serif;
+  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-jetbrains-mono: "JetBrains Mono", monospace;
+
+  /* Trading specific colors */
+  --trading-success: oklch(0.7 0.25 140);
+  --trading-danger: oklch(0.65 0.25 15);
+  --trading-warning: oklch(0.75 0.25 60);
+  --trading-info: oklch(0.65 0.2 200);
+
+  /* Gradient borders only for light mode */
+  --gradient-border: linear-gradient(135deg, oklch(0.75 0.3 320), oklch(0.65 0.25 280), oklch(0.7 0.3 240));
+}
+
+.dark {
+  /* Dark theme - black and gray backgrounds, gray borders only */
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+
+  /* Trading specific colors for dark mode */
+  --trading-success: oklch(0.65 0.2 140);
+  --trading-danger: oklch(0.6 0.25 15);
+  --trading-warning: oklch(0.7 0.2 60);
+  --trading-info: oklch(0.6 0.2 200);
+
+  /* Gray borders only for dark mode */
+  --gradient-border: oklch(0.25 0 0);
+}
+
+@theme inline {
+  /* Updated font configuration with professional fonts */
+  --font-sans: var(--font-poppins);
+  --font-poppins: "Poppins", sans-serif;
+  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-mono: var(--font-jetbrains-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Added animated gradient border effects */
+@layer utilities {
+  .border-gradient {
+    position: relative;
+    background: var(--background);
+  }
+
+  .border-gradient::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    background: var(--gradient-border);
+    border-radius: inherit;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: xor;
+    -webkit-mask-composite: xor;
+  }
+
+  /* Animated gradient border on hover */
+  .border-gradient-animated {
+    position: relative;
+    background: var(--background);
+    overflow: hidden;
+  }
+
+  .border-gradient-animated::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    background: conic-gradient(
+      from 0deg,
+      transparent,
+      oklch(0.75 0.3 320),
+      oklch(0.65 0.25 280),
+      oklch(0.7 0.3 240),
+      oklch(0.8 0.25 200),
+      transparent
+    );
+    border-radius: inherit;
+    animation: rotate 3s linear infinite;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .dark .border-gradient-animated::before {
+    background: conic-gradient(
+      from 0deg,
+      transparent,
+      oklch(0.3 0 0),
+      oklch(0.4 0 0),
+      oklch(0.35 0 0),
+      oklch(0.25 0 0),
+      transparent
+    );
+  }
+
+  .border-gradient-animated:hover::before {
+    opacity: 1;
+  }
+
+  .border-gradient-animated::after {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    background: var(--background);
+    border-radius: calc(var(--radius) - 1px);
+    z-index: 1;
+  }
+
+  .border-gradient-animated > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  @keyframes rotate {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  .text-trading-success {
+    color: var(--trading-success);
+  }
+
+  .text-trading-danger {
+    color: var(--trading-danger);
+  }
+
+  .text-trading-warning {
+    color: var(--trading-warning);
+  }
+
+  .text-trading-info {
+    color: var(--trading-info);
+  }
+
+  .border-trading-success {
+    border-color: var(--trading-success);
+  }
+
+  .border-trading-danger {
+    border-color: var(--trading-danger);
+  }
+
+  /* Updated CSS to fix panel background for TradingView chart */
+  .bg-panel {
+    background: var(--card);
+  }
+
+  /* Modern shadow system for depth and elevation */
+  .shadow-soft {
+    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1), 0 4px 16px -4px rgba(0, 0, 0, 0.06);
+  }
+
+  .shadow-medium {
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.12), 0 8px 32px -8px rgba(0, 0, 0, 0.08);
+  }
+
+  .shadow-strong {
+    box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.16), 0 16px 64px -16px rgba(0, 0, 0, 0.12);
+  }
+
+  .shadow-glow {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 2px 8px -2px rgba(0, 0, 0, 0.2), 0 4px 16px -4px
+      rgba(0, 0, 0, 0.15);
+  }
+
+  /* Dark mode shadows */
+  .dark .shadow-soft {
+    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.3), 0 4px 16px -4px rgba(0, 0, 0, 0.2);
+  }
+
+  .dark .shadow-medium {
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.4), 0 8px 32px -8px rgba(0, 0, 0, 0.3);
+  }
+
+  .dark .shadow-strong {
+    box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.5), 0 16px 64px -16px rgba(0, 0, 0, 0.4);
+  }
+
+  .dark .shadow-glow {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 2px 8px -2px rgba(0, 0, 0, 0.6), 0 4px 16px -4px
+      rgba(0, 0, 0, 0.5);
+  }
+
+  /* Floating card effect */
+  .card-floating {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .card-floating:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Glass morphism effect */
+  .glass-panel {
+    backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .dark .glass-panel {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Modern grid layouts */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 24px;
+    height: 100vh;
+  }
+
+  .dashboard-main {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* Responsive text and spacing utilities */
+  .responsive-text {
+    @media (max-width: 768px) {
+      font-size: 0.875rem;
+    }
+  }
+
+  .responsive-padding {
+    @media (max-width: 768px) {
+      padding: 0.75rem;
+    }
+    @media (max-width: 640px) {
+      padding: 0.5rem;
+    }
+  }
+}

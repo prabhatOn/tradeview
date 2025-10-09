@@ -1,0 +1,354 @@
+/* Admin Dashboard Professional Styles */
+
+/* Clean card effects */
+.admin-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  transition: all 0.2s ease-in-out;
+}
+
+.admin-card:hover {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.admin-card-elevated {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.admin-card-elevated:hover {
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/* Professional typography with new fonts */
+.admin-heading {
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.admin-subheading {
+  font-family: var(--font-poppins), sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.admin-body-text {
+  font-family: var(--font-poppins), sans-serif;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.admin-mono {
+  font-family: var(--font-jetbrains-mono), monospace;
+}
+
+/* Sidebar animations */
+.admin-sidebar-item {
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-sidebar-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  transition: left 0.5s;
+}
+
+.admin-sidebar-item:hover::before {
+  left: 100%;
+}
+
+/* Status indicators */
+.status-online {
+  animation: pulse-green 2s infinite;
+}
+
+.status-warning {
+  animation: pulse-yellow 2s infinite;
+}
+
+.status-error {
+  animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-green {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes pulse-yellow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Glass morphism effects */
+.admin-glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.admin-glass-dark {
+  background: rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom scrollbar for admin */
+.admin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+}
+
+.admin-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(45deg, rgb(59, 130, 246), rgb(147, 51, 234));
+  border-radius: 3px;
+}
+
+.admin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(45deg, rgb(37, 99, 235), rgb(126, 34, 206));
+}
+
+/* Loading animations */
+.admin-loading {
+  animation: admin-spin 1s linear infinite;
+}
+
+@keyframes admin-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Notification styles */
+.admin-notification {
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Semantic color styles */
+.admin-success {
+  color: rgb(34, 197, 94);
+}
+
+.admin-danger {
+  color: rgb(239, 68, 68);
+}
+
+.admin-warning {
+  color: rgb(245, 158, 11);
+}
+
+.admin-info {
+  color: rgb(59, 130, 246);
+}
+
+/* Button semantic styles */
+.admin-btn-success {
+  background-color: rgb(34, 197, 94);
+  color: white;
+}
+
+.admin-btn-success:hover {
+  background-color: rgb(21, 128, 61);
+}
+
+.admin-btn-danger {
+  background-color: rgb(239, 68, 68);
+  color: white;
+}
+
+.admin-btn-danger:hover {
+  background-color: rgb(185, 28, 28);
+}
+
+/* Role badge styles with solid colors */
+.role-admin {
+  background-color: rgb(59, 130, 246);
+  color: white;
+}
+
+.role-super-admin {
+  background-color: rgb(245, 158, 11);
+  color: white;
+}
+
+.role-administrator {
+  background-color: rgb(147, 51, 234);
+  color: white;
+}
+
+/* Professional button styles */
+.admin-btn-primary {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-weight: 600;
+  transition: all 0.2s ease-in-out;
+}
+
+.admin-btn-primary:hover {
+  background: hsl(var(--primary) / 0.9);
+  box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.1);
+}
+
+/* Professional input styles */
+.admin-input {
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  font-family: var(--font-inter), sans-serif;
+  font-weight: 500;
+}
+
+.admin-input:focus {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-color: hsl(var(--ring));
+}
+
+/* Professional table styles */
+.admin-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.admin-table th,
+.admin-table td {
+  border-bottom: 1px solid hsl(var(--border));
+  padding: 0.75rem 1rem;
+}
+
+.admin-table th {
+  background: hsl(var(--muted) / 0.5);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+/* Gradient Border System */
+.admin-gradient-border {
+  position: relative;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.admin-gradient-border::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: inherit;
+  z-index: -1;
+  background: var(--gradient-border);
+}
+
+/* Light mode cyberpunk gradient borders */
+:root .admin-gradient-border::before {
+  background: linear-gradient(135deg, 
+    #ff0080 0%,   /* Bright pink */
+    #7928ca 25%, /* Purple */
+    #0070f3 50%, /* Electric blue */
+    #00dfd8 75%, /* Cyan */
+    #ff0080 100% /* Back to pink */
+  );
+  animation: cyberpunk-rotate 4s linear infinite;
+}
+
+/* Dark mode gray gradient borders */
+.dark .admin-gradient-border::before {
+  background: linear-gradient(135deg,
+    #374151 0%,   /* Gray-700 */
+    #6b7280 25%,  /* Gray-500 */
+    #9ca3af 50%,  /* Gray-400 */
+    #6b7280 75%,  /* Gray-500 */
+    #374151 100%  /* Gray-700 */
+  );
+  animation: gray-pulse 3s ease-in-out infinite;
+}
+
+@keyframes cyberpunk-rotate {
+  0% {
+    background: linear-gradient(135deg, 
+      #ff0080 0%, #7928ca 25%, #0070f3 50%, #00dfd8 75%, #ff0080 100%);
+  }
+  25% {
+    background: linear-gradient(135deg, 
+      #00dfd8 0%, #ff0080 25%, #7928ca 50%, #0070f3 75%, #00dfd8 100%);
+  }
+  50% {
+    background: linear-gradient(135deg, 
+      #0070f3 0%, #00dfd8 25%, #ff0080 50%, #7928ca 75%, #0070f3 100%);
+  }
+  75% {
+    background: linear-gradient(135deg, 
+      #7928ca 0%, #0070f3 25%, #00dfd8 50%, #ff0080 75%, #7928ca 100%);
+  }
+  100% {
+    background: linear-gradient(135deg, 
+      #ff0080 0%, #7928ca 25%, #0070f3 50%, #00dfd8 75%, #ff0080 100%);
+  }
+}
+
+@keyframes gray-pulse {
+  0%, 100% {
+    background: linear-gradient(135deg,
+      #374151 0%, #6b7280 25%, #9ca3af 50%, #6b7280 75%, #374151 100%);
+  }
+  50% {
+    background: linear-gradient(135deg,
+      #6b7280 0%, #9ca3af 25%, #d1d5db 50%, #9ca3af 75%, #6b7280 100%);
+  }
+}
+
+/* Card with gradient border */
+.admin-card-gradient {
+  background: hsl(var(--card));
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  transition: all 0.2s ease-in-out;
+}
+
+.admin-card-gradient:hover {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
