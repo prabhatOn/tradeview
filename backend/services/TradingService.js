@@ -1,7 +1,9 @@
-const { executeQuery } = require('../config/database');
-const NotificationService = require('./NotificationService');
-const Position = require('../models/Position');
-const TradingAccount = require('../models/TradingAccount');
+import { executeQuery } from '../config/database';
+import NotificationService from './NotificationService';
+import Position from '../models/Position';
+import TradingAccount from '../models/TradingAccount';
+import TradeHistory from '../models/TradeHistory';
+import IntroducingBrokerService from './IntroducingBrokerService';
 
 class TradingService {
   // Update all positions for a symbol with new market prices
@@ -111,12 +113,13 @@ class TradingService {
       }
 
       // Create position
+      const side = positionType === 'sell' ? 'sell' : 'buy';
+
       const result = await executeQuery(`
         INSERT INTO positions (
-          user_id, account_id, symbol_id, position_type, volume, 
-          open_price, leverage, stop_loss, take_profit, margin_used
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [userId, accountId, symbolId, positionType, volume, openPrice, leverage, stopLoss, takeProfit, marginRequired]);
+          account_id, symbol_id, side, lot_size, open_price, current_price, stop_loss, take_profit
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [accountId, symbolId, side, volume, openPrice, openPrice, stopLoss, takeProfit]);
 
       // Update account margin
       await executeQuery(`
@@ -152,12 +155,14 @@ class TradingService {
       const positions = await executeQuery(`
         SELECT 
           p.*,
+          ta.user_id AS account_user_id,
           s.symbol,
           md.current_price
         FROM positions p
+        JOIN trading_accounts ta ON p.account_id = ta.id
         JOIN symbols s ON p.symbol_id = s.id
         LEFT JOIN market_data md ON s.id = md.symbol_id AND md.date = CURDATE()
-        WHERE p.id = ? AND p.user_id = ? AND p.status = 'open'
+        WHERE p.id = ? AND ta.user_id = ? AND p.status IN ('open', 'partially_closed')
       `, [positionId, userId]);
 
       if (!positions.length) {
@@ -165,23 +170,33 @@ class TradingService {
       }
 
       const position = positions[0];
-      const finalClosePrice = closePrice || position.current_price;
-      
+      const accountUserId = position.account_user_id || userId;
+      const finalClosePrice = closePrice ?? position.current_price ?? position.open_price;
+
       // Calculate P&L
       const metrics = this.calculatePositionMetrics(position, finalClosePrice);
+      const closeReason = 'manual';
       
       // Close position
       await executeQuery(`
         UPDATE positions 
         SET 
           status = 'closed',
+          current_price = ?,
           close_price = ?,
-          close_time = CURRENT_TIMESTAMP,
-          profit_loss = ?
+          profit = ?,
+          profit_loss = ?,
+          closed_at = NOW(),
+          close_time = NOW(),
+          close_reason = ?,
+          updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `, [finalClosePrice, metrics.unrealizedPnl, positionId]);
+      `, [finalClosePrice, finalClosePrice, metrics.unrealizedPnl, metrics.unrealizedPnl, closeReason, positionId]);
 
       // Update account balance and margin
+      const rawMarginUsed = Number(position.margin_used);
+      const marginUsed = Number.isFinite(rawMarginUsed) ? rawMarginUsed : 0;
+
       await executeQuery(`
         UPDATE trading_accounts 
         SET 
@@ -190,7 +205,69 @@ class TradingService {
           equity = balance + ?,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `, [metrics.unrealizedPnl, position.margin_used, metrics.unrealizedPnl, position.account_id]);
+      `, [metrics.unrealizedPnl, marginUsed, metrics.unrealizedPnl, position.account_id]);
+
+      let tradeHistoryId = null;
+      let ibCommissionResult = null;
+
+      try {
+        tradeHistoryId = await TradeHistory.recordPositionClose({
+          accountId: position.account_id,
+          symbolId: position.symbol_id,
+          positionId: position.id,
+          side: position.side || position.position_type,
+          lotSize: position.lot_size,
+          openPrice: position.open_price,
+          closePrice: finalClosePrice,
+          stopLoss: position.stop_loss,
+          takeProfit: position.take_profit,
+          commission: position.commission || 0,
+          swap: position.swap || 0,
+          profit: metrics.unrealizedPnl,
+          closeReason,
+          comment: position.comment,
+          magicNumber: position.magic_number,
+          openedAt: position.opened_at,
+          closedAt: new Date().toISOString()
+        });
+      } catch (historyError) {
+        console.error('Failed to record trade history for closed position:', historyError);
+      }
+
+      if (tradeHistoryId) {
+        try {
+          ibCommissionResult = await IntroducingBrokerService.processTradeCommission(
+            accountUserId,
+            tradeHistoryId,
+            position.id,
+            Math.abs(position.lot_size),
+            metrics.unrealizedPnl
+          );
+
+          if (ibCommissionResult && global.broadcast) {
+            global.broadcast({
+              type: 'ib_commission_recorded',
+              userId: ibCommissionResult.ibUserId,
+              data: {
+                commissionId: ibCommissionResult.commissionId,
+                tradeId: tradeHistoryId,
+                positionId: position.id,
+                clientUserId: accountUserId,
+                commissionAmount: ibCommissionResult.commissionAmount,
+                commissionRate: ibCommissionResult.commissionRate,
+                tradeVolume: ibCommissionResult.tradeVolume,
+                profit: metrics.unrealizedPnl,
+                symbol: position.symbol,
+                side: position.side || position.position_type,
+                lotSize: position.lot_size,
+                closedAt: new Date().toISOString()
+              }
+            });
+          }
+        } catch (ibError) {
+          console.error('Failed to process IB commission on manual close:', ibError);
+        }
+      }
 
       // Send notification
       const pnlStatus = metrics.unrealizedPnl >= 0 ? 'profit' : 'loss';
@@ -203,7 +280,9 @@ class TradingService {
 
       return {
         pnl: metrics.unrealizedPnl,
-        closePrice: finalClosePrice
+        closePrice: finalClosePrice,
+        tradeHistoryId,
+        ibCommission: ibCommissionResult
       };
     } catch (error) {
       console.error('Error closing position:', error);
@@ -328,13 +407,15 @@ class TradingService {
   static async getPositionHistory(userId, page = 1, limit = 20, status = null) {
     try {
       const offset = (page - 1) * limit;
-      let whereClause = 'WHERE p.user_id = ?';
-      let params = [userId];
+      const whereParts = ['ta.user_id = ?'];
+      const params = [userId];
 
       if (status) {
-        whereClause += ' AND p.status = ?';
+        whereParts.push('p.status = ?');
         params.push(status);
       }
+
+      const whereClause = `WHERE ${whereParts.join(' AND ')}`;
 
       const positions = await executeQuery(`
         SELECT 
@@ -346,12 +427,15 @@ class TradingService {
         JOIN symbols s ON p.symbol_id = s.id
         JOIN trading_accounts ta ON p.account_id = ta.id
         ${whereClause}
-        ORDER BY p.created_at DESC
+        ORDER BY p.opened_at DESC
         LIMIT ? OFFSET ?
       `, [...params, limit, offset]);
 
       const totalCount = await executeQuery(`
-        SELECT COUNT(*) as count FROM positions p ${whereClause}
+        SELECT COUNT(*) as count
+        FROM positions p
+        JOIN trading_accounts ta ON p.account_id = ta.id
+        ${whereClause}
       `, params);
 
       return {
@@ -372,27 +456,30 @@ class TradingService {
   // Get trading statistics
   static async getTradingStats(userId, accountId = null) {
     try {
-      let whereClause = 'WHERE user_id = ?';
-      let params = [userId];
+      const whereParts = ['ta.user_id = ?'];
+      const params = [userId];
 
       if (accountId) {
-        whereClause += ' AND account_id = ?';
+        whereParts.push('p.account_id = ?');
         params.push(accountId);
       }
+
+      const whereClause = `WHERE ${whereParts.join(' AND ')}`;
 
       const stats = await executeQuery(`
         SELECT 
           COUNT(*) as total_positions,
-          COUNT(CASE WHEN status = 'open' THEN 1 END) as open_positions,
-          COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed_positions,
-          COUNT(CASE WHEN status = 'closed' AND profit_loss > 0 THEN 1 END) as winning_trades,
-          COUNT(CASE WHEN status = 'closed' AND profit_loss < 0 THEN 1 END) as losing_trades,
-          COALESCE(SUM(CASE WHEN status = 'closed' THEN profit_loss ELSE 0 END), 0) as total_pnl,
-          COALESCE(MAX(CASE WHEN status = 'closed' THEN profit_loss ELSE NULL END), 0) as best_trade,
-          COALESCE(MIN(CASE WHEN status = 'closed' THEN profit_loss ELSE NULL END), 0) as worst_trade,
-          COALESCE(AVG(CASE WHEN status = 'closed' THEN profit_loss ELSE NULL END), 0) as avg_pnl,
-          COALESCE(SUM(volume), 0) as total_volume
-        FROM positions
+          COUNT(CASE WHEN p.status = 'open' THEN 1 END) as open_positions,
+          COUNT(CASE WHEN p.status = 'closed' THEN 1 END) as closed_positions,
+          COUNT(CASE WHEN p.status = 'closed' AND p.profit_loss > 0 THEN 1 END) as winning_trades,
+          COUNT(CASE WHEN p.status = 'closed' AND p.profit_loss < 0 THEN 1 END) as losing_trades,
+          COALESCE(SUM(CASE WHEN p.status = 'closed' THEN p.profit_loss ELSE 0 END), 0) as total_pnl,
+          COALESCE(MAX(CASE WHEN p.status = 'closed' THEN p.profit_loss ELSE NULL END), 0) as best_trade,
+          COALESCE(MIN(CASE WHEN p.status = 'closed' THEN p.profit_loss ELSE NULL END), 0) as worst_trade,
+          COALESCE(AVG(CASE WHEN p.status = 'closed' THEN p.profit_loss ELSE NULL END), 0) as avg_pnl,
+          COALESCE(SUM(p.lot_size), 0) as total_volume
+        FROM positions p
+        JOIN trading_accounts ta ON p.account_id = ta.id
         ${whereClause}
       `, params);
 

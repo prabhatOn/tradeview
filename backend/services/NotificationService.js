@@ -1,25 +1,56 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { executeQuery } = require('../config/database');
+
+const NOTIFICATION_CHANNEL = 'in_app';
+
+const mapRowToNotification = (row) => {
+  let parsed = null;
+  if (row.data) {
+    try {
+      parsed = JSON.parse(row.data);
+    } catch {
+      parsed = { category: 'info', data: null };
+    }
+  }
+
+  const category = parsed?.category || 'info';
+  const payload = Object.prototype.hasOwnProperty.call(parsed || {}, 'data') ? parsed.data : parsed;
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    title: row.title,
+    message: row.message,
+    type: category,
+    data: payload ?? null,
+    isRead: row.status === 'read',
+    createdAt: row.created_at,
+    readAt: row.read_at ?? null,
+  };
+};
 
 class NotificationService {
   // Send notification to user
-  static async sendNotification(userId, title, message, type = 'info', data = null) {
+  static async sendNotification(userId, title, message, category = 'info', data = null) {
     try {
-      const result = await executeQuery(`
-        INSERT INTO notifications (user_id, title, message, type, data)
-        VALUES (?, ?, ?, ?, ?)
-      `, [userId, title, message, type, JSON.stringify(data)]);
+      const payload = JSON.stringify({ category, data });
+      const result = await executeQuery(
+        `INSERT INTO user_notifications (user_id, type, title, message, data, status, sent_at)
+         VALUES (?, ?, ?, ?, ?, 'sent', NOW())`,
+        [userId, NOTIFICATION_CHANNEL, title, message, payload]
+      );
 
-      // In a real application, you would also send push notifications,
-      // emails, SMS, etc. based on user preferences
       const notification = {
         id: result.insertId,
         userId,
         title,
         message,
-        type,
+        type: category,
         data,
         isRead: false,
-        createdAt: new Date()
+        createdAt: new Date().toISOString(),
+        readAt: null,
       };
 
       // Emit to WebSocket if user is connected
@@ -93,32 +124,36 @@ class NotificationService {
       let params = [userId];
 
       if (unreadOnly) {
-        whereClause += ' AND is_read = 0';
+        whereClause += " AND status <> 'read'";
       }
 
-      const notifications = await executeQuery(`
-        SELECT *
-        FROM user_notifications
-        ${whereClause}
-        ORDER BY created_at DESC
-        LIMIT ? OFFSET ?
-      `, [...params, limit, offset]);
+        const rows = await executeQuery(
+          `SELECT id, user_id, title, message, data, status, created_at, read_at
+           FROM user_notifications
+           ${whereClause}
+           ORDER BY created_at DESC
+           LIMIT ? OFFSET ?`,
+          [...params, limit, offset]
+        );
 
-      const totalCount = await executeQuery(`
-        SELECT COUNT(*) as count
-        FROM user_notifications
-        ${whereClause}
-      `, params);
+        const notifications = rows.map(mapRowToNotification);
 
-      return {
-        notifications,
-        pagination: {
-          page,
-          limit,
-          total: totalCount[0].count,
-          pages: Math.ceil(totalCount[0].count / limit)
-        }
-      };
+        const totalCount = await executeQuery(
+          `SELECT COUNT(*) as count
+           FROM user_notifications
+           ${whereClause}`,
+          params
+        );
+
+        return {
+          notifications,
+          pagination: {
+            page,
+            limit,
+            total: totalCount[0].count,
+            pages: Math.ceil(totalCount[0].count / limit),
+          },
+        };
     } catch (error) {
       console.error('Error fetching notifications:', error);
       throw error;
@@ -128,13 +163,14 @@ class NotificationService {
   // Mark notification as read
   static async markAsRead(notificationId, userId) {
     try {
-      await executeQuery(`
-        UPDATE notifications
-        SET is_read = 1, read_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND user_id = ?
-      `, [notificationId, userId]);
+        const result = await executeQuery(
+          `UPDATE user_notifications
+           SET status = 'read', read_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND user_id = ?`,
+          [notificationId, userId]
+        );
 
-      return true;
+      return result?.affectedRows > 0;
     } catch (error) {
       console.error('Error marking notification as read:', error);
       throw error;
@@ -144,11 +180,12 @@ class NotificationService {
   // Mark all notifications as read
   static async markAllAsRead(userId) {
     try {
-      await executeQuery(`
-        UPDATE notifications
-        SET is_read = 1, read_at = CURRENT_TIMESTAMP
-        WHERE user_id = ? AND is_read = 0
-      `, [userId]);
+        await executeQuery(
+          `UPDATE user_notifications
+           SET status = 'read', read_at = CURRENT_TIMESTAMP
+           WHERE user_id = ? AND status <> 'read'`,
+          [userId]
+        );
 
       return true;
     } catch (error) {
@@ -160,10 +197,11 @@ class NotificationService {
   // Delete notification
   static async deleteNotification(notificationId, userId) {
     try {
-      await executeQuery(`
-        DELETE FROM user_notifications
-        WHERE id = ? AND user_id = ?
-      `, [notificationId, userId]);
+      await executeQuery(
+        `DELETE FROM user_notifications
+         WHERE id = ? AND user_id = ?`,
+        [notificationId, userId]
+      );
 
       return true;
     } catch (error) {
@@ -175,11 +213,12 @@ class NotificationService {
   // Get unread count
   static async getUnreadCount(userId) {
     try {
-      const result = await executeQuery(`
-        SELECT COUNT(*) as count
-        FROM user_notifications
-        WHERE user_id = ? AND is_read = 0
-      `, [userId]);
+      const result = await executeQuery(
+        `SELECT COUNT(*) as count
+         FROM user_notifications
+         WHERE user_id = ? AND status <> 'read'`,
+        [userId]
+      );
 
       return result[0].count;
     } catch (error) {
@@ -256,22 +295,38 @@ class NotificationService {
   // Send bulk notifications
   static async sendBulkNotifications(userIds, title, message, type = 'info', data = null) {
     try {
-      const values = userIds.map(userId => [userId, title, message, type, JSON.stringify(data)]);
-      
-      await executeQuery(`
-        INSERT INTO notifications (user_id, title, message, type, data)
-        VALUES ?
-      `, [values]);
+      if (!userIds || userIds.length === 0) {
+        return true;
+      }
 
-      // Emit to all users via WebSocket
-      userIds.forEach(userId => {
+      const now = new Date();
+      const payload = userIds.map((userId) => [
+        userId,
+        NOTIFICATION_CHANNEL,
+        title,
+        message,
+        JSON.stringify({ category: type, data }),
+        'sent',
+        now,
+      ]);
+
+      await executeQuery(
+        `INSERT INTO user_notifications (user_id, type, title, message, data, status, sent_at)
+         VALUES ?`,
+        [payload]
+      );
+
+      userIds.forEach((userId) => {
         this.emitToUser(userId, 'notification', {
+          id: null,
+          userId,
           title,
           message,
           type,
           data,
           isRead: false,
-          createdAt: new Date()
+          createdAt: now.toISOString(),
+          readAt: null,
         });
       });
 
@@ -285,10 +340,11 @@ class NotificationService {
   // Clean old notifications
   static async cleanOldNotifications(daysToKeep = 30) {
     try {
-      const result = await executeQuery(`
-        DELETE FROM user_notifications
-        WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)
-      `, [daysToKeep]);
+      const result = await executeQuery(
+        `DELETE FROM user_notifications
+         WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)`,
+        [daysToKeep]
+      );
 
       return result.affectedRows;
     } catch (error) {

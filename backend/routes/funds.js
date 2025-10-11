@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const express = require('express');
 const Joi = require('joi');
 const { executeQuery } = require('../config/database');
@@ -303,7 +305,11 @@ router.post('/deposit', asyncHandler(async (req, res) => {
   const txId = transactionId || `DEP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   // Process deposit
-  const result = await FundManager.processDeposit(accountId, amount, method, txId);
+  const result = await FundManager.processDeposit(accountId, amount, method, txId, {
+    performedByType: 'user',
+    performedById: req.user.id,
+    metadata: { source: 'user_funds_deposit' }
+  });
 
   // Broadcast balance update via WebSocket
   if (global.broadcast) {
@@ -319,6 +325,8 @@ router.post('/deposit', asyncHandler(async (req, res) => {
         reason: 'deposit',
         method: method,
         transactionId: txId,
+        performedByType: 'user',
+        performedById: req.user.id,
         timestamp: new Date().toISOString()
       }
     });
@@ -366,7 +374,11 @@ router.post('/withdrawal', asyncHandler(async (req, res) => {
 
   try {
     // Process withdrawal
-    const result = await FundManager.processWithdrawal(accountId, amount, method, txId);
+    const result = await FundManager.processWithdrawal(accountId, amount, method, txId, {
+      performedByType: 'user',
+      performedById: req.user.id,
+      metadata: { source: 'user_funds_withdrawal', notes }
+    });
 
     // Broadcast balance update via WebSocket
     if (global.broadcast) {
@@ -382,6 +394,8 @@ router.post('/withdrawal', asyncHandler(async (req, res) => {
           reason: 'withdrawal',
           method: method,
           transactionId: txId,
+          performedByType: 'user',
+          performedById: req.user.id,
           timestamp: new Date().toISOString()
         }
       });
@@ -413,57 +427,118 @@ router.post('/withdrawal', asyncHandler(async (req, res) => {
  * GET /funds/methods
  */
 router.get('/methods', asyncHandler(async (req, res) => {
-  const fundingMethods = [
-    {
-      type: 'bank_transfer',
-      name: 'Bank Transfer',
-      depositLimits: { min: 100, max: 50000 },
-      withdrawalLimits: { min: 50, max: 50000 },
-      processingTime: '1-3 business days',
-      fees: { deposit: 0, withdrawal: 25 },
-      available: true
-    },
-    {
-      type: 'credit_card',
-      name: 'Credit Card',
-      depositLimits: { min: 10, max: 5000 },
-      withdrawalLimits: { min: 10, max: 5000 },
-      processingTime: 'Instant',
-      fees: { deposit: '2.9%', withdrawal: '2.9%' },
-      available: true
-    },
-    {
-      type: 'debit_card', 
-      name: 'Debit Card',
-      depositLimits: { min: 10, max: 5000 },
-      withdrawalLimits: { min: 10, max: 5000 },
-      processingTime: 'Instant',
-      fees: { deposit: '1.5%', withdrawal: '1.5%' },
-      available: true
-    },
-    {
-      type: 'crypto',
-      name: 'Cryptocurrency',
-      depositLimits: { min: 50, max: 25000 },
-      withdrawalLimits: { min: 50, max: 25000 },
-      processingTime: '10-60 minutes',
-      fees: { deposit: 'Network fees', withdrawal: 'Network fees' },
-      available: true
-    },
-    {
-      type: 'e_wallet',
-      name: 'E-Wallet (PayPal, Skrill)',
-      depositLimits: { min: 20, max: 10000 },
-      withdrawalLimits: { min: 20, max: 10000 },
-      processingTime: 'Instant - 24 hours',
-      fees: { deposit: '1%', withdrawal: '1%' },
-      available: true
+  const gateways = await executeQuery(`
+    SELECT 
+      id,
+      name,
+      display_name,
+      type,
+      provider,
+      min_amount,
+      max_amount,
+      processing_fee_type,
+      processing_fee_value,
+      processing_time_hours,
+      supported_currencies,
+      description,
+      icon_url,
+      configuration
+    FROM payment_gateways
+    WHERE is_active = 1
+    ORDER BY sort_order ASC, display_name ASC
+  `);
+
+  const bankAccounts = await executeQuery(`
+    SELECT 
+      ba.id,
+      ba.label,
+      ba.bank_name,
+      ba.account_name,
+      ba.account_number,
+      ba.account_type,
+      ba.iban,
+      ba.swift_code,
+      ba.routing_number,
+      ba.branch_name,
+      ba.branch_address,
+      ba.country,
+      ba.currency,
+      ba.instructions,
+      ba.current_balance,
+      ba.metadata,
+      pg.display_name as gateway_display_name,
+      pg.type as gateway_type
+    FROM bank_accounts ba
+    LEFT JOIN payment_gateways pg ON ba.payment_gateway_id = pg.id
+    WHERE ba.is_active = 1
+    ORDER BY ba.sort_order ASC, ba.bank_name ASC
+  `);
+
+  const formatFee = (type, value) => {
+    if (type === 'percentage') {
+      return `${parseFloat(value).toFixed(2)}%`;
     }
-  ];
+    return `$${parseFloat(value).toFixed(2)}`;
+  };
+
+  const fundingMethods = gateways.map((gateway) => {
+    const supportedCurrencies = gateway.supported_currencies ? JSON.parse(gateway.supported_currencies) : [];
+    const configuration = gateway.configuration ? JSON.parse(gateway.configuration) : {};
+
+    return {
+      id: gateway.id,
+      type: gateway.type,
+      name: gateway.display_name,
+      provider: gateway.provider,
+      depositLimits: {
+        min: parseFloat(gateway.min_amount),
+        max: parseFloat(gateway.max_amount)
+      },
+      withdrawalLimits: {
+        min: parseFloat(gateway.min_amount),
+        max: parseFloat(gateway.max_amount)
+      },
+      processingTime: gateway.processing_time_hours ? `${gateway.processing_time_hours} hours` : 'Instant',
+      processingTimeHours: gateway.processing_time_hours,
+      fees: {
+        deposit: formatFee(gateway.processing_fee_type, gateway.processing_fee_value),
+        withdrawal: formatFee(gateway.processing_fee_type, gateway.processing_fee_value)
+      },
+      supportedCurrencies,
+      configuration,
+      description: gateway.description,
+      iconUrl: gateway.icon_url,
+      available: true
+    };
+  });
+
+  const formattedBanks = bankAccounts.map((bank) => ({
+    id: bank.id,
+    label: bank.label,
+    bankName: bank.bank_name,
+    accountName: bank.account_name,
+    accountNumber: bank.account_number,
+    accountType: bank.account_type,
+    iban: bank.iban,
+    swiftCode: bank.swift_code,
+    routingNumber: bank.routing_number,
+    branchName: bank.branch_name,
+    branchAddress: bank.branch_address,
+    country: bank.country,
+    currency: bank.currency,
+    instructions: bank.instructions,
+    currentBalance: bank.current_balance,
+    metadata: bank.metadata ? JSON.parse(bank.metadata) : {},
+    gatewayDisplayName: bank.gateway_display_name,
+    gatewayType: bank.gateway_type
+  }));
 
   res.json({
     success: true,
-    data: fundingMethods
+    data: {
+      methods: fundingMethods,
+      bankAccounts: formattedBanks
+    }
   });
 }));
 

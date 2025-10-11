@@ -1,5 +1,6 @@
-const mysql = require('mysql2/promise');
-require('dotenv').config();
+import mysql from 'mysql2/promise';
+import dotenv from 'dotenv';
+dotenv.config();
 
 /**
  * Database Migration Script for Enhanced Forex Trading Platform

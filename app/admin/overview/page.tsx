@@ -7,7 +7,6 @@ import { Progress } from "@/components/ui/progress"
 import {
   LayoutDashboard,
   Users,
-  Building2,
   Receipt,
   TrendingUp,
   HeadphonesIcon,
@@ -24,7 +23,6 @@ import {
 const adminSidebarItems = [
   { title: "Overview", icon: LayoutDashboard, href: "/admin/overview", description: "Dashboard overview and analytics" },
   { title: "User Management", icon: Users, href: "/admin/users", description: "Manage users and accounts" },
-  { title: "MAM/PAMM", icon: Building2, href: "/admin/mam-pamm", description: "Multi-account management" },
   { title: "Trades & Charges", icon: Receipt, href: "/admin/trades-charges", description: "Trading fees and charges" },
   { title: "Trades", icon: TrendingUp, href: "/admin/trades", description: "Trading activities monitoring" },
   { title: "Support Tickets", icon: HeadphonesIcon, href: "/admin/support", description: "Customer support management" },
@@ -50,7 +48,7 @@ export default function OverviewPage() {
             System Overview
           </h1>
           <p className="text-muted-foreground mt-2">
-            Monitor your platform's performance and key metrics
+            Monitor your platform&apos;s performance and key metrics
           </p>
         </div>
 

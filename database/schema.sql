@@ -1,4 +1,10 @@
--- Trading Platform Database Schema
+  ✅ Created payment_gateways table
+📝 Step 6: Enhancing transactions table...
+❌ Migration failed: Table 'pro2.transactions' doesn't exist
+Stack trace: Error: Table 'pro2.transactions' doesn't exist
+    at PromiseConnection.execute (B:\projects\trad\backend\node_modules\mysql2\lib\promise\connection.js:47:22)
+    at runMigration (B:\projects\trad\backend\migrate_enhanced_schema.js:292:26)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)-- Trading Platform Database Schema
 -- Optimized following Normal Forms (1NF, 2NF, 3NF)
 -- Created: September 30, 2025
 
@@ -124,15 +130,22 @@ CREATE TABLE account_balance_history (
     previous_balance DECIMAL(15,4),
     new_balance DECIMAL(15,4),
     change_amount DECIMAL(15,4),
-    change_type ENUM('deposit', 'withdrawal', 'trade_profit', 'trade_loss', 'commission', 'swap', 'adjustment') NOT NULL,
+    change_type ENUM('deposit', 'withdrawal', 'trade_profit', 'trade_loss', 'commission', 'swap', 'adjustment', 'manual_credit', 'manual_debit', 'admin_adjustment', 'bonus') NOT NULL,
+    change_context ENUM('deposit', 'withdrawal', 'trade', 'adjustment', 'bonus', 'correction', 'system') DEFAULT 'trade',
     reference_id INT,
     reference_type VARCHAR(50),
+    performed_by_type ENUM('user', 'admin', 'system') DEFAULT 'user',
+    performed_by_id INT,
+    metadata JSON,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     FOREIGN KEY (account_id) REFERENCES trading_accounts(id) ON DELETE CASCADE,
+    FOREIGN KEY (performed_by_id) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_account_id (account_id),
     INDEX idx_change_type (change_type),
+    INDEX idx_context (change_context),
+    INDEX idx_performed_by_id (performed_by_id),
     INDEX idx_created_at (created_at)
 );
 
@@ -263,15 +276,20 @@ CREATE TABLE positions (
     lot_size DECIMAL(8,4) NOT NULL,
     open_price DECIMAL(12,6) NOT NULL,
     current_price DECIMAL(12,6),
+    close_price DECIMAL(12,6),
     stop_loss DECIMAL(12,6),
     take_profit DECIMAL(12,6),
     commission DECIMAL(10,4) DEFAULT 0.0000,
     swap DECIMAL(10,4) DEFAULT 0.0000,
     profit DECIMAL(12,4) DEFAULT 0.0000,
+    profit_loss DECIMAL(12,4) DEFAULT 0.0000,
     status ENUM('open', 'closed', 'partially_closed') DEFAULT 'open',
+    close_reason ENUM('manual', 'stop_loss', 'take_profit', 'margin_call', 'system') DEFAULT 'manual',
     comment TEXT,
     magic_number INT,
     opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMP NULL,
+    close_time TIMESTAMP NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     FOREIGN KEY (account_id) REFERENCES trading_accounts(id) ON DELETE CASCADE,
@@ -280,7 +298,10 @@ CREATE TABLE positions (
     INDEX idx_account_id (account_id),
     INDEX idx_symbol_id (symbol_id),
     INDEX idx_status (status),
-    INDEX idx_opened_at (opened_at)
+    INDEX idx_opened_at (opened_at),
+    INDEX idx_closed_at (closed_at),
+    INDEX idx_close_time (close_time),
+    INDEX idx_close_reason (close_reason)
 );
 
 -- Trade history (closed positions)
@@ -318,6 +339,63 @@ CREATE TABLE trade_history (
 -- =================================================================
 -- FINANCIAL TRANSACTIONS
 -- =================================================================
+
+-- Payment gateways
+CREATE TABLE payment_gateways (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    type ENUM('bank_transfer', 'credit_card', 'debit_card', 'crypto', 'e_wallet', 'wire_transfer') NOT NULL,
+    provider VARCHAR(50),
+    is_active BOOLEAN DEFAULT TRUE,
+    min_amount DECIMAL(15,4) DEFAULT 0.0000,
+    max_amount DECIMAL(15,4) DEFAULT 999999.9999,
+    processing_fee_type ENUM('fixed', 'percentage') DEFAULT 'percentage',
+    processing_fee_value DECIMAL(10,4) DEFAULT 0.0000,
+    processing_time_hours INT DEFAULT 24,
+    supported_currencies JSON,
+    configuration JSON,
+    sort_order INT DEFAULT 0,
+    icon_url VARCHAR(500),
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_name (name),
+    INDEX idx_type (type),
+    INDEX idx_active (is_active),
+    INDEX idx_sort_order (sort_order)
+);
+
+-- Bank accounts for local transfers
+CREATE TABLE bank_accounts (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    payment_gateway_id INT NULL,
+    label VARCHAR(120) NOT NULL,
+    bank_name VARCHAR(150) NOT NULL,
+    account_name VARCHAR(150) NOT NULL,
+    account_number VARCHAR(120) NOT NULL,
+    account_type ENUM('personal', 'business') DEFAULT 'business',
+    iban VARCHAR(60),
+    swift_code VARCHAR(60),
+    routing_number VARCHAR(60),
+    branch_name VARCHAR(150),
+    branch_address VARCHAR(255),
+    country VARCHAR(100),
+    currency VARCHAR(3) DEFAULT 'USD',
+    instructions TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    sort_order INT DEFAULT 0,
+    current_balance DECIMAL(15,2) DEFAULT 0.00,
+    metadata JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (payment_gateway_id) REFERENCES payment_gateways(id) ON DELETE SET NULL,
+    INDEX idx_gateway (payment_gateway_id),
+    INDEX idx_active (is_active),
+    INDEX idx_sort_order (sort_order)
+);
 
 -- Payment methods
 CREATE TABLE payment_methods (
@@ -358,19 +436,26 @@ CREATE TABLE deposits (
     gateway_response JSON,
     admin_notes TEXT,
     user_notes TEXT,
+    reviewed_by INT,
+    reviewed_at TIMESTAMP NULL,
+    review_notes TEXT,
     processed_by INT,
     processed_at TIMESTAMP NULL,
+    batch_reference VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (account_id) REFERENCES trading_accounts(id) ON DELETE CASCADE,
     FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id),
+    FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (processed_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_user_id (user_id),
     INDEX idx_account_id (account_id),
     INDEX idx_status (status),
     INDEX idx_created_at (created_at),
+    INDEX idx_reviewed_by (reviewed_by),
+    INDEX idx_batch_reference (batch_reference),
     INDEX idx_transaction_id (transaction_id)
 );
 
@@ -391,19 +476,26 @@ CREATE TABLE withdrawals (
     gateway_response JSON,
     admin_notes TEXT,
     user_notes TEXT,
+    reviewed_by INT,
+    reviewed_at TIMESTAMP NULL,
+    review_notes TEXT,
     processed_by INT,
     processed_at TIMESTAMP NULL,
+    batch_reference VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (account_id) REFERENCES trading_accounts(id) ON DELETE CASCADE,
     FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id),
+    FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (processed_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_user_id (user_id),
     INDEX idx_account_id (account_id),
     INDEX idx_status (status),
     INDEX idx_created_at (created_at),
+    INDEX idx_reviewed_by (reviewed_by),
+    INDEX idx_batch_reference (batch_reference),
     INDEX idx_transaction_id (transaction_id)
 );
 

@@ -1,4 +1,10 @@
-const { executeQuery, executeTransaction } = require('../config/database');
+/* eslint-disable import/no-commonjs */
+/* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable @typescript-eslint/no-require-imports */
+const { executeQuery } = require('../config/database');
+const IntroducingBrokerService = require('../services/IntroducingBrokerService');
+const TradeHistory = require('./TradeHistory');
+const TradingAccount = require('./TradingAccount');
 
 class Position {
   constructor(data) {
@@ -6,6 +12,7 @@ class Position {
     this.accountId = data.account_id;
     this.symbolId = data.symbol_id;
     this.orderId = data.order_id;
+    this.userId = data.user_id;
     this.side = data.side; // 'buy' or 'sell'
     this.lotSize = parseFloat(data.lot_size);
     this.openPrice = parseFloat(data.open_price);
@@ -22,12 +29,41 @@ class Position {
     this.openedAt = data.opened_at;
     this.updatedAt = data.updated_at;
     this.closedAt = data.closed_at;
+    this.closeTime = data.close_time || data.closed_at;
     this.closeReason = data.close_reason;
+    this.contractSize = data.contract_size ? parseFloat(data.contract_size) : this.contractSize;
+    this.pipSize = data.pip_size ? parseFloat(data.pip_size) : this.pipSize;
     
     // Additional fields from joins
     this.symbol = data.symbol;
     this.symbolName = data.symbol_name;
     this.accountNumber = data.account_number;
+  }
+
+  static async findById(positionId) {
+    const positions = await executeQuery(
+      `SELECT 
+        p.*, 
+        ta.user_id, 
+        ta.account_number, 
+        s.symbol, 
+        s.name as symbol_name,
+        s.contract_size,
+        s.pip_size
+      FROM positions p
+      JOIN trading_accounts ta ON p.account_id = ta.id
+      JOIN symbols s ON p.symbol_id = s.id
+      WHERE p.id = ?`,
+      [positionId]
+    );
+
+    if (!positions.length) return null;
+
+    const position = new Position(positions[0]);
+    position.contractSize = positions[0].contract_size ? parseFloat(positions[0].contract_size) : position.contractSize;
+    position.pipSize = positions[0].pip_size ? parseFloat(positions[0].pip_size) : position.pipSize;
+    position.userId = positions[0].user_id;
+    return position;
   }
 
   // Find positions by account ID
@@ -133,7 +169,7 @@ class Position {
       throw new Error('Symbol not found');
     }
 
-    const { contract_size, pip_size, commission_value } = symbolInfo[0];
+    const { commission_value } = symbolInfo[0];
     
     // Calculate commission
     const commission = parseFloat(commission_value) * lotSize;
@@ -150,7 +186,6 @@ class Position {
     // Position openings are not recorded in trade_history
 
     // Update account metrics after opening position
-    const TradingAccount = require('./TradingAccount');
     const account = await TradingAccount.findById(accountId);
     if (account) {
       await account.refreshAccountMetrics();
@@ -197,7 +232,6 @@ class Position {
     this.updatedAt = new Date();
 
     // Update account metrics
-    const TradingAccount = require('./TradingAccount');
     const account = await TradingAccount.findById(this.accountId);
     if (account) {
       await account.refreshAccountMetrics();
@@ -283,37 +317,38 @@ class Position {
   // Close position
   async close(closePrice, closeReason = 'manual') {
     const finalProfit = this.calculateProfit(closePrice);
+    let ibCommissionResult = null;
     
     // Update position status in database
     await executeQuery(
       `UPDATE positions 
-       SET status = 'closed', current_price = ?, profit = ?, 
-           closed_at = NOW(), close_reason = ?, updated_at = CURRENT_TIMESTAMP
+       SET status = 'closed', current_price = ?, close_price = ?, profit = ?, profit_loss = ?, 
+           closed_at = NOW(), close_time = NOW(), close_reason = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [closePrice, finalProfit, closeReason, this.id]
+      [closePrice, closePrice, finalProfit, finalProfit, closeReason, this.id]
     );
 
     // Record position closing in trade history
-    const TradeHistory = require('./TradeHistory');
-    await TradeHistory.recordPositionClose(
-      this.accountId,
-      this.symbolId,
-      this.id,
+    const tradeHistoryId = await TradeHistory.recordPositionClose({
+      accountId: this.accountId,
+      symbolId: this.symbolId,
+      positionId: this.id,
+      side: this.side,
+      lotSize: this.lotSize,
+      openPrice: this.openPrice,
       closePrice,
-      finalProfit,
-      this.side,
-      this.lotSize,
-      this.openPrice,
-      this.stopLoss,
-      this.takeProfit,
-      this.commission,
-      this.swap,
+      stopLoss: this.stopLoss,
+      takeProfit: this.takeProfit,
+      commission: this.commission,
+      swap: this.swap,
+      profit: finalProfit,
       closeReason,
-      this.openedAt
-    );
+      comment: this.comment,
+      magicNumber: this.magicNumber,
+      openedAt: this.openedAt
+    });
 
     // Update account balance with profit/loss
-    const TradingAccount = require('./TradingAccount');
     const account = await TradingAccount.findById(this.accountId);
     if (account) {
       const newBalance = account.balance + finalProfit;
@@ -325,19 +360,58 @@ class Position {
         'position_close',
         `Position closed: ${this.symbol} ${this.side} ${this.lotSize} lots`
       );
+
+      // Process IB commission if applicable
+      try {
+        ibCommissionResult = await IntroducingBrokerService.processTradeCommission(
+          account.userId,
+          tradeHistoryId,
+          this.id,
+          Math.abs(this.lotSize),
+          finalProfit
+        );
+
+        if (ibCommissionResult && global.broadcast) {
+          global.broadcast({
+            type: 'ib_commission_recorded',
+            userId: ibCommissionResult.ibUserId,
+            data: {
+              commissionId: ibCommissionResult.commissionId,
+              tradeId: tradeHistoryId,
+              positionId: this.id,
+              clientUserId: account.userId,
+              commissionAmount: ibCommissionResult.commissionAmount,
+              commissionRate: ibCommissionResult.commissionRate,
+              tradeVolume: ibCommissionResult.tradeVolume,
+              profit: finalProfit,
+              symbol: this.symbol,
+              side: this.side,
+              lotSize: this.lotSize,
+              closedAt: new Date().toISOString()
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Failed to process IB commission:', error);
+      }
     }
 
     this.status = 'closed';
     this.currentPrice = closePrice;
+    this.closePrice = closePrice;
     this.profit = finalProfit;
-    this.closedAt = new Date();
+    const closedAtIso = new Date().toISOString();
+    this.closedAt = closedAtIso;
+    this.closeTime = closedAtIso;
     this.closeReason = closeReason;
 
     return {
       positionId: this.id,
       closePrice,
       finalProfit,
-      closeReason
+      closeReason,
+      tradeHistoryId,
+      ibCommission: ibCommissionResult
     };
   }
 
@@ -388,6 +462,7 @@ class Position {
       accountId: this.accountId,
       symbolId: this.symbolId,
       orderId: this.orderId,
+  userId: this.userId,
       
       // Symbol information
       symbol: this.symbol,
@@ -427,7 +502,7 @@ class Position {
       closedAt: this.closedAt,
       closeReason: this.closeReason,
       openTime: this.openedAt, // Frontend compatibility
-      closeTime: this.closedAt, // Frontend compatibility
+  closeTime: this.closeTime || this.closedAt, // Frontend compatibility
       
       // Additional calculated fields
       netProfit: this.calculateNetProfit(),

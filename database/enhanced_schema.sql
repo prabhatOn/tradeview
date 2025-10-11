@@ -195,6 +195,39 @@ CREATE TABLE payment_gateways (
 );
 
 -- =================================================================
+-- 5A. BANK ACCOUNTS FOR LOCAL TRANSFERS
+-- =================================================================
+
+CREATE TABLE bank_accounts (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    payment_gateway_id INT NULL,
+    label VARCHAR(120) NOT NULL,
+    bank_name VARCHAR(150) NOT NULL,
+    account_name VARCHAR(150) NOT NULL,
+    account_number VARCHAR(120) NOT NULL,
+    account_type ENUM('personal', 'business') DEFAULT 'business',
+    iban VARCHAR(60),
+    swift_code VARCHAR(60),
+    routing_number VARCHAR(60),
+    branch_name VARCHAR(150),
+    branch_address VARCHAR(255),
+    country VARCHAR(100),
+    currency VARCHAR(3) DEFAULT 'USD',
+    instructions TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    sort_order INT DEFAULT 0,
+    current_balance DECIMAL(15,2) DEFAULT 0.00,
+    metadata JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (payment_gateway_id) REFERENCES payment_gateways(id) ON DELETE SET NULL,
+    INDEX idx_gateway (payment_gateway_id),
+    INDEX idx_active (is_active),
+    INDEX idx_sort_order (sort_order)
+);
+
+-- =================================================================
 -- 6. ENHANCED TRANSACTION MANAGEMENT
 -- =================================================================
 

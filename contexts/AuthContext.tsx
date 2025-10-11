@@ -128,6 +128,7 @@ interface AuthContextType extends AuthState {
     firstName: string;
     lastName: string;
     phone?: string;
+    referralCode?: string;
     acceptTerms: boolean;
   }) => Promise<void>;
   logout: () => Promise<void>;
@@ -203,6 +204,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     firstName: string;
     lastName: string;
     phone?: string;
+    referralCode?: string;
     acceptTerms: boolean;
   }) => {
     try {

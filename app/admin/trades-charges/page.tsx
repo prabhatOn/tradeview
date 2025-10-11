@@ -13,7 +13,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   LayoutDashboard,
   Users,
-  Building2,
   Receipt,
   TrendingUp,
   HeadphonesIcon,
@@ -31,7 +30,6 @@ import {
   AlertTriangle,
   CheckCircle,
   BarChart3,
-  TrendingDown,
   Calculator,
   Shield,
   Target
@@ -40,7 +38,6 @@ import {
 const adminSidebarItems = [
   { title: "Overview", icon: LayoutDashboard, href: "/admin", description: "Dashboard overview and analytics" },
   { title: "User Management", icon: Users, href: "/admin/users", description: "Manage users and accounts" },
-  { title: "MAM/PAMM", icon: Building2, href: "/admin/mam-pamm", description: "Multi-account management" },
   { title: "Trades & Charges", icon: Receipt, href: "/admin/trades-charges", description: "Trading fees and charges" },
   { title: "Trades", icon: TrendingUp, href: "/admin/trades", description: "Trading activities monitoring" },
   { title: "Support Tickets", icon: HeadphonesIcon, href: "/admin/support", description: "Customer support management" },
@@ -105,7 +102,6 @@ const tradingSymbols = [
 ]
 
 export default function TradesChargesPage() {
-  const [activeTab, setActiveTab] = useState("charges")
   const [standardCommission, setStandardCommission] = useState("0.5")
   const [standardSpread, setStandardSpread] = useState("1.5")
   const [vipCommission, setVipCommission] = useState("0.3")

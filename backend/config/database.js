@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const mysql = require('mysql2/promise');
 
 // Database configuration
@@ -87,10 +89,12 @@ async function executeQuery(sql, params = []) {
         if (isNaN(limitValue) || isNaN(offsetValue) || limitValue < 0 || offsetValue < 0 || limitValue > 10000) {
           throw new Error('Invalid LIMIT/OFFSET values');
         }
-        
-        // Replace placeholders with actual values
-        sql = sql.replace(/LIMIT \? OFFSET \?$/, `LIMIT ${limitValue} OFFSET ${offsetValue}`);
-        params = params.slice(0, -2); // Remove the LIMIT/OFFSET params
+
+        const updatedSql = sql.replace(/LIMIT \? OFFSET \?\s*$/, `LIMIT ${limitValue} OFFSET ${offsetValue}`);
+        if (updatedSql !== sql) {
+          sql = updatedSql;
+          params = params.slice(0, -2); // Remove the LIMIT/OFFSET params only if replacement occurred
+        }
       }
     }
     

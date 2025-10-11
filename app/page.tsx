@@ -1,12 +1,12 @@
 "use client"
 
-import { useState } from "react"
 import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed"
 import { TradingSidebar } from "@/components/trading-sidebar"
 import TradingChart from "@/components/trading-chart"
 import PositionsTable from "@/components/positions-table"
 import { TopDashboardPanel } from "@/components/top-dashboard-panel"
 import { ProtectedRoute } from "@/components/auth/protected-route"
+import { NotificationsFeed } from "@/components/notifications-feed"
 
 export default function TradingDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(false)
@@ -30,6 +30,11 @@ export default function TradingDashboard() {
           {/* Top Section - adaptive height */}
           <section className="flex-shrink-0">
             <TopDashboardPanel />
+          </section>
+
+          {/* Notifications Section */}
+          <section className="flex-shrink-0">
+            <NotificationsFeed />
           </section>
 
           {/* Chart Section - expands to available space */}

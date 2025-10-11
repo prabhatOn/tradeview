@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const express = require('express');
 const Joi = require('joi');
 const { executeQuery } = require('../config/database');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
-const { adminMiddleware } = require('../middleware/auth');
+const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -35,6 +37,47 @@ const updateGatewaySchema = Joi.object({
   description: Joi.string().max(500).optional(),
   iconUrl: Joi.string().uri().optional(),
   configuration: Joi.object().optional(),
+  sortOrder: Joi.number().integer().optional()
+});
+
+const createBankAccountSchema = Joi.object({
+  label: Joi.string().min(1).max(120).required(),
+  bankName: Joi.string().min(1).max(150).required(),
+  accountName: Joi.string().min(1).max(150).required(),
+  accountNumber: Joi.string().min(1).max(120).required(),
+  accountType: Joi.string().valid('personal', 'business').default('business'),
+  iban: Joi.string().max(60).allow('', null),
+  swiftCode: Joi.string().max(60).allow('', null),
+  routingNumber: Joi.string().max(60).allow('', null),
+  branchName: Joi.string().max(150).allow('', null),
+  branchAddress: Joi.string().max(255).allow('', null),
+  country: Joi.string().max(100).allow('', null),
+  currency: Joi.string().length(3).uppercase().default('USD'),
+  instructions: Joi.string().max(2000).allow('', null),
+  isActive: Joi.boolean().default(true),
+  paymentGatewayId: Joi.number().integer().positive().allow(null),
+  currentBalance: Joi.number().precision(2).min(0).default(0),
+  metadata: Joi.object().optional()
+});
+
+const updateBankAccountSchema = Joi.object({
+  label: Joi.string().min(1).max(120).optional(),
+  bankName: Joi.string().min(1).max(150).optional(),
+  accountName: Joi.string().min(1).max(150).optional(),
+  accountNumber: Joi.string().min(1).max(120).optional(),
+  accountType: Joi.string().valid('personal', 'business').optional(),
+  iban: Joi.string().max(60).allow('', null),
+  swiftCode: Joi.string().max(60).allow('', null),
+  routingNumber: Joi.string().max(60).allow('', null),
+  branchName: Joi.string().max(150).allow('', null),
+  branchAddress: Joi.string().max(255).allow('', null),
+  country: Joi.string().max(100).allow('', null),
+  currency: Joi.string().length(3).uppercase().optional(),
+  instructions: Joi.string().max(2000).allow('', null),
+  isActive: Joi.boolean().optional(),
+  paymentGatewayId: Joi.number().integer().positive().allow(null),
+  currentBalance: Joi.number().precision(2).min(0).optional(),
+  metadata: Joi.object().optional(),
   sortOrder: Joi.number().integer().optional()
 });
 
@@ -82,8 +125,49 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
+// Get active bank accounts for public display
+router.get('/banks', asyncHandler(async (req, res) => {
+  const banks = await executeQuery(`
+    SELECT 
+      ba.id,
+      ba.label,
+      ba.bank_name,
+      ba.account_name,
+      ba.account_number,
+      ba.account_type,
+      ba.iban,
+      ba.swift_code,
+      ba.routing_number,
+      ba.branch_name,
+      ba.branch_address,
+      ba.country,
+      ba.currency,
+      ba.instructions,
+      ba.current_balance,
+      ba.metadata,
+      ba.sort_order,
+      ba.payment_gateway_id,
+      pg.display_name as gateway_display_name,
+      pg.type as gateway_type
+    FROM bank_accounts ba
+    LEFT JOIN payment_gateways pg ON ba.payment_gateway_id = pg.id
+    WHERE ba.is_active = 1
+    ORDER BY ba.sort_order ASC, ba.bank_name ASC
+  `);
+
+  const formattedBanks = banks.map(bank => ({
+    ...bank,
+    metadata: bank.metadata ? JSON.parse(bank.metadata) : {},
+  }));
+
+  res.json({
+    success: true,
+    data: formattedBanks
+  });
+}));
+
 // Admin: Get all payment gateways with full details
-router.get('/admin', adminMiddleware, asyncHandler(async (req, res) => {
+router.get('/admin', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const gateways = await executeQuery(`
     SELECT 
       *,
@@ -108,8 +192,328 @@ router.get('/admin', adminMiddleware, asyncHandler(async (req, res) => {
   });
 }));
 
+// Admin: Get bank accounts with details
+router.get('/admin/banks', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const banks = await executeQuery(`
+    SELECT 
+      ba.*,
+      pg.display_name as gateway_display_name,
+      pg.type as gateway_type
+    FROM bank_accounts ba
+    LEFT JOIN payment_gateways pg ON ba.payment_gateway_id = pg.id
+    ORDER BY ba.sort_order ASC, ba.bank_name ASC
+  `);
+
+  const formattedBanks = banks.map(bank => ({
+    ...bank,
+    metadata: bank.metadata ? JSON.parse(bank.metadata) : {},
+  }));
+
+  res.json({
+    success: true,
+    data: formattedBanks
+  });
+}));
+
+// Admin: Create bank account
+router.post('/admin/banks', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { error, value } = createBankAccountSchema.validate(req.body);
+  if (error) {
+    throw new AppError(error.details[0].message, 400);
+  }
+
+  const {
+    label,
+    bankName,
+    accountName,
+    accountNumber,
+    accountType,
+    iban,
+    swiftCode,
+    routingNumber,
+    branchName,
+    branchAddress,
+    country,
+    currency,
+    instructions,
+    isActive,
+    paymentGatewayId,
+    currentBalance,
+    metadata
+  } = value;
+
+  if (paymentGatewayId) {
+    const [gateway] = await executeQuery(
+      'SELECT id FROM payment_gateways WHERE id = ?',
+      [paymentGatewayId]
+    );
+
+    if (gateway.length === 0) {
+      throw new AppError('Associated payment gateway not found', 404);
+    }
+  }
+
+  const [maxSort] = await executeQuery('SELECT COALESCE(MAX(sort_order), 0) + 1 as next_sort FROM bank_accounts');
+  const sortOrder = maxSort.next_sort || 1;
+
+  const result = await executeQuery(`
+    INSERT INTO bank_accounts (
+      payment_gateway_id,
+      label,
+      bank_name,
+      account_name,
+      account_number,
+      account_type,
+      iban,
+      swift_code,
+      routing_number,
+      branch_name,
+      branch_address,
+      country,
+      currency,
+      instructions,
+      is_active,
+      sort_order,
+      current_balance,
+      metadata
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    paymentGatewayId || null,
+    label,
+    bankName,
+    accountName,
+    accountNumber,
+    accountType,
+    iban || null,
+    swiftCode || null,
+    routingNumber || null,
+    branchName || null,
+    branchAddress || null,
+    country || null,
+    currency,
+    instructions || null,
+    isActive ? 1 : 0,
+    sortOrder,
+    currentBalance || 0,
+    JSON.stringify(metadata || {})
+  ]);
+
+  res.status(201).json({
+    success: true,
+    data: {
+      id: result.insertId,
+      message: 'Bank account created successfully'
+    }
+  });
+}));
+
+// Admin: Update bank account
+router.put('/admin/banks/:bankId', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const bankId = parseInt(req.params.bankId);
+
+  const { error, value } = updateBankAccountSchema.validate(req.body);
+  if (error) {
+    throw new AppError(error.details[0].message, 400);
+  }
+
+  const [existing] = await executeQuery(
+    'SELECT id FROM bank_accounts WHERE id = ?',
+    [bankId]
+  );
+
+  if (existing.length === 0) {
+    throw new AppError('Bank account not found', 404);
+  }
+
+  if (value.paymentGatewayId) {
+    const [gateway] = await executeQuery(
+      'SELECT id FROM payment_gateways WHERE id = ?',
+      [value.paymentGatewayId]
+    );
+
+    if (gateway.length === 0) {
+      throw new AppError('Associated payment gateway not found', 404);
+    }
+  }
+
+  const updateFields = [];
+  const updateValues = [];
+
+  Object.entries(value).forEach(([key, val]) => {
+    if (val === undefined) return;
+
+    switch (key) {
+      case 'label':
+        updateFields.push('label = ?');
+        updateValues.push(val);
+        break;
+      case 'bankName':
+        updateFields.push('bank_name = ?');
+        updateValues.push(val);
+        break;
+      case 'accountName':
+        updateFields.push('account_name = ?');
+        updateValues.push(val);
+        break;
+      case 'accountNumber':
+        updateFields.push('account_number = ?');
+        updateValues.push(val);
+        break;
+      case 'accountType':
+        updateFields.push('account_type = ?');
+        updateValues.push(val);
+        break;
+      case 'iban':
+        updateFields.push('iban = ?');
+        updateValues.push(val || null);
+        break;
+      case 'swiftCode':
+        updateFields.push('swift_code = ?');
+        updateValues.push(val || null);
+        break;
+      case 'routingNumber':
+        updateFields.push('routing_number = ?');
+        updateValues.push(val || null);
+        break;
+      case 'branchName':
+        updateFields.push('branch_name = ?');
+        updateValues.push(val || null);
+        break;
+      case 'branchAddress':
+        updateFields.push('branch_address = ?');
+        updateValues.push(val || null);
+        break;
+      case 'country':
+        updateFields.push('country = ?');
+        updateValues.push(val || null);
+        break;
+      case 'currency':
+        updateFields.push('currency = ?');
+        updateValues.push(val);
+        break;
+      case 'instructions':
+        updateFields.push('instructions = ?');
+        updateValues.push(val || null);
+        break;
+      case 'isActive':
+        updateFields.push('is_active = ?');
+        updateValues.push(val ? 1 : 0);
+        break;
+      case 'paymentGatewayId':
+        updateFields.push('payment_gateway_id = ?');
+        updateValues.push(val || null);
+        break;
+      case 'currentBalance':
+        updateFields.push('current_balance = ?');
+        updateValues.push(val);
+        break;
+      case 'metadata':
+        updateFields.push('metadata = ?');
+        updateValues.push(JSON.stringify(val || {}));
+        break;
+      case 'sortOrder':
+        updateFields.push('sort_order = ?');
+        updateValues.push(val);
+        break;
+      default:
+        break;
+    }
+  });
+
+  if (updateFields.length === 0) {
+    throw new AppError('No fields to update', 400);
+  }
+
+  updateFields.push('updated_at = CURRENT_TIMESTAMP');
+  updateValues.push(bankId);
+
+  await executeQuery(
+    `UPDATE bank_accounts SET ${updateFields.join(', ')} WHERE id = ?`,
+    updateValues
+  );
+
+  res.json({
+    success: true,
+    message: 'Bank account updated successfully'
+  });
+}));
+
+// Admin: Delete bank account
+router.delete('/admin/banks/:bankId', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const bankId = parseInt(req.params.bankId);
+
+  const [existing] = await executeQuery(
+    'SELECT id FROM bank_accounts WHERE id = ?',
+    [bankId]
+  );
+
+  if (existing.length === 0) {
+    throw new AppError('Bank account not found', 404);
+  }
+
+  await executeQuery('DELETE FROM bank_accounts WHERE id = ?', [bankId]);
+
+  res.json({
+    success: true,
+    message: 'Bank account deleted successfully'
+  });
+}));
+
+// Admin: Toggle bank account status
+router.patch('/admin/banks/:bankId/toggle', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const bankId = parseInt(req.params.bankId);
+
+  const [existing] = await executeQuery(
+    'SELECT id, is_active, label FROM bank_accounts WHERE id = ?',
+    [bankId]
+  );
+
+  if (existing.length === 0) {
+    throw new AppError('Bank account not found', 404);
+  }
+
+  const newStatus = !existing[0].is_active;
+
+  await executeQuery(
+    'UPDATE bank_accounts SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [newStatus, bankId]
+  );
+
+  res.json({
+    success: true,
+    message: `Bank account ${newStatus ? 'activated' : 'deactivated'} successfully`,
+    data: {
+      bankLabel: existing[0].label,
+      isActive: newStatus
+    }
+  });
+}));
+
+// Admin: Reorder bank accounts
+router.post('/admin/banks/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { bankIds } = req.body;
+
+  if (!Array.isArray(bankIds)) {
+    throw new AppError('bankIds must be an array', 400);
+  }
+
+  const queries = bankIds.map((bankId, index) => ({
+    sql: 'UPDATE bank_accounts SET sort_order = ? WHERE id = ?',
+    params: [index + 1, bankId]
+  }));
+
+  if (queries.length > 0) {
+    await Promise.all(queries.map(({ sql, params }) => executeQuery(sql, params)));
+  }
+
+  res.json({
+    success: true,
+    message: 'Bank accounts reordered successfully'
+  });
+}));
+
 // Admin: Create new payment gateway
-router.post('/admin', adminMiddleware, asyncHandler(async (req, res) => {
+router.post('/admin', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   // Validate input
   const { error, value } = createGatewaySchema.validate(req.body);
   if (error) {
@@ -162,7 +566,7 @@ router.post('/admin', adminMiddleware, asyncHandler(async (req, res) => {
 }));
 
 // Admin: Update payment gateway
-router.put('/admin/:gatewayId', adminMiddleware, asyncHandler(async (req, res) => {
+router.put('/admin/:gatewayId', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const gatewayId = parseInt(req.params.gatewayId);
   
   // Validate input
@@ -259,7 +663,7 @@ router.put('/admin/:gatewayId', adminMiddleware, asyncHandler(async (req, res) =
 }));
 
 // Admin: Delete payment gateway
-router.delete('/admin/:gatewayId', adminMiddleware, asyncHandler(async (req, res) => {
+router.delete('/admin/:gatewayId', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const gatewayId = parseInt(req.params.gatewayId);
 
   // Check if gateway exists
@@ -293,7 +697,7 @@ router.delete('/admin/:gatewayId', adminMiddleware, asyncHandler(async (req, res
 }));
 
 // Admin: Toggle payment gateway status
-router.patch('/admin/:gatewayId/toggle', adminMiddleware, asyncHandler(async (req, res) => {
+router.patch('/admin/:gatewayId/toggle', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const gatewayId = parseInt(req.params.gatewayId);
 
   // Check if gateway exists
@@ -324,7 +728,7 @@ router.patch('/admin/:gatewayId/toggle', adminMiddleware, asyncHandler(async (re
 }));
 
 // Admin: Reorder payment gateways
-router.post('/admin/reorder', adminMiddleware, asyncHandler(async (req, res) => {
+router.post('/admin/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const { gatewayIds } = req.body; // Array of gateway IDs in desired order
 
   if (!Array.isArray(gatewayIds)) {
@@ -348,7 +752,7 @@ router.post('/admin/reorder', adminMiddleware, asyncHandler(async (req, res) => 
 }));
 
 // Admin: Get payment gateway statistics
-router.get('/admin/:gatewayId/stats', adminMiddleware, asyncHandler(async (req, res) => {
+router.get('/admin/:gatewayId/stats', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const gatewayId = parseInt(req.params.gatewayId);
   const { period = '30d' } = req.query;
 

@@ -44,7 +44,6 @@ import { Switch } from "@/components/ui/switch"
 import {
   LayoutDashboard,
   Users,
-  Building2,
   Receipt,
   TrendingUp,
   HeadphonesIcon,
@@ -53,6 +52,7 @@ import {
   Search,
   Plus,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   ShieldOff,
   UserCheck,
@@ -63,7 +63,9 @@ import {
   ArrowRight,
   Lock,
   Unlock,
-  Trash2
+  Trash2,
+  Link2,
+  Link2Off
 } from "lucide-react"
 import { adminService } from "@/lib/services"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -82,7 +84,6 @@ import { useDebounce } from "@/hooks/use-debounce"
 const adminSidebarItems = [
   { title: "Overview", icon: LayoutDashboard, href: "/admin", description: "Dashboard overview and analytics" },
   { title: "User Management", icon: Users, href: "/admin/users", description: "Manage users and accounts" },
-  { title: "MAM/PAMM", icon: Building2, href: "/admin/mam-pamm", description: "Multi-account management" },
   { title: "Trades & Charges", icon: Receipt, href: "/admin/trades-charges", description: "Trading fees and charges" },
   { title: "Trades", icon: TrendingUp, href: "/admin/trades", description: "Trading activities monitoring" },
   { title: "Support Tickets", icon: HeadphonesIcon, href: "/admin/support", description: "Customer support management" },
@@ -103,6 +104,9 @@ type AdminAccountStatus = (typeof ADMIN_ACCOUNT_STATUSES)[number]
 type StatusFilter = "all" | AdminAccountStatus
 type SortKey = "created_at" | "email" | "status" | "last_login_at" | "first_name" | "trading_accounts_count" | "total_balance"
 
+const IB_STATUS_VALUES = ["approved", "pending", "rejected", "not_applied"] as const
+type IbStatus = (typeof IB_STATUS_VALUES)[number]
+
 interface AdminUserRow {
   id: number
   email: string
@@ -117,6 +121,37 @@ interface AdminUserRow {
   tradingAccountsCount: number
   totalBalance: number
   kycStatus: string | null
+}
+
+interface UserDetailSnapshot {
+  id: number | null
+  email: string
+  firstName: string | null
+  lastName: string | null
+  fullName: string
+  status: AdminAccountStatus
+  role: string | null
+  isVerified: boolean
+  kycStatus: string | null
+  createdAt: string | null
+  lastLoginAt: string | null
+  phone: string | null
+  address: {
+    line1: string | null
+    line2: string | null
+    city: string | null
+    state: string | null
+    postalCode: string | null
+    country: string | null
+  }
+  accounts: AdminUserAccountSummary[]
+  activity: AdminUserActivityItem[]
+  tradingAccountsCount: number
+  totalBalance: number
+  ibStatus: IbStatus
+  ibUpdatedAt: string | null
+  ibCreatedAt: string | null
+  ibHasRole: boolean
 }
 
 const statusOptions: { label: string; value: StatusFilter }[] = [
@@ -158,6 +193,17 @@ const formatStatus = (value: string) =>
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ")
 
+const isIbStatus = (value: string): value is IbStatus =>
+  (IB_STATUS_VALUES as readonly string[]).includes(value)
+
+const normalizeIbStatus = (value: string | null | undefined, hasRole: boolean): IbStatus => {
+  const normalized = (value ?? "").toLowerCase().trim()
+  if (normalized && isIbStatus(normalized)) {
+    return normalized
+  }
+  return hasRole ? "approved" : "not_applied"
+}
+
 const formatDate = (value: string | null) => {
   if (!value) return "—"
   const date = new Date(value)
@@ -195,6 +241,19 @@ const getInitials = (name: string) =>
     .slice(0, 2)
     .join("") || "?"
 
+const parseNumeric = (value: number | string | null | undefined): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  return 0
+}
+
 const normalizeAdminUser = (user: AdminUserSummary): AdminUserRow => {
   const firstName = user.firstName ?? user.first_name ?? null
   const lastName = user.lastName ?? user.last_name ?? null
@@ -228,41 +287,44 @@ const normalizeAdminUser = (user: AdminUserSummary): AdminUserRow => {
   }
 }
 
-const mapDetailUserToRow = (
-  user: AdminUserDetailUser,
-  accounts: AdminUserAccountSummary[] | undefined,
-  fallback?: AdminUserRow
-): AdminUserRow => {
-  const firstName = user.firstName ?? user.first_name ?? fallback?.firstName ?? null
-  const lastName = user.lastName ?? user.last_name ?? fallback?.lastName ?? null
-  const createdAt = user.createdAt ?? user.created_at ?? fallback?.createdAt ?? null
-  const lastLoginAt = user.lastLogin ?? user.last_login ?? fallback?.lastLoginAt ?? null
-  const statusRaw = (user.status ?? fallback?.status ?? 'active').toLowerCase()
-  const normalizedStatus = ADMIN_ACCOUNT_STATUSES.includes(statusRaw as AdminAccountStatus)
-    ? (statusRaw as AdminAccountStatus)
-    : fallback?.status ?? 'active'
-  const isVerifiedRaw =
-    user.emailVerified ?? user.email_verified ?? fallback?.isVerified ?? false
-  const isVerified = typeof isVerifiedRaw === 'number' ? isVerifiedRaw === 1 : Boolean(isVerifiedRaw)
-  const tradingAccounts = accounts?.length ?? fallback?.tradingAccountsCount ?? 0
-  const totalBalance = accounts
-    ? accounts.reduce((sum, account) => sum + Number(account.balance ?? 0), 0)
-    : fallback?.totalBalance ?? 0
+const normalizeAdminUserDetail = (detail: AdminUserDetail): AdminUserDetail => {
+  const normalizedAccounts = Array.isArray(detail.accounts)
+    ? [...detail.accounts]
+        .filter((account): account is AdminUserAccountSummary => Boolean(account && account.id))
+        .map((account) => ({
+          ...account,
+          balance: parseNumeric(account.balance),
+          equity: parseNumeric(account.equity),
+          margin: parseNumeric(account.margin),
+          free_margin: parseNumeric(account.free_margin),
+        }))
+        .sort((a, b) => {
+          const aTime = new Date(a.created_at ?? "").getTime()
+          const bTime = new Date(b.created_at ?? "").getTime()
+          if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0
+          if (Number.isNaN(aTime)) return 1
+          if (Number.isNaN(bTime)) return -1
+          return bTime - aTime
+        })
+    : []
+
+  const normalizedActivity = Array.isArray(detail.activity)
+    ? [...detail.activity]
+        .filter((item): item is AdminUserActivityItem => Boolean(item && item.created_at))
+        .sort((a, b) => {
+          const aTime = new Date(a.created_at).getTime()
+          const bTime = new Date(b.created_at).getTime()
+          if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0
+          if (Number.isNaN(aTime)) return 1
+          if (Number.isNaN(bTime)) return -1
+          return bTime - aTime
+        })
+    : []
 
   return {
-    id: user.id,
-    email: user.email,
-    firstName,
-    lastName,
-    phone: user.phone ?? fallback?.phone ?? null,
-    status: normalizedStatus,
-    role: (user.primary_role ?? fallback?.role ?? null)?.toLowerCase?.() ?? fallback?.role ?? null,
-    isVerified,
-    createdAt,
-    lastLoginAt,
-    tradingAccountsCount: tradingAccounts,
-    totalBalance,
-    kycStatus: user.kycStatus ?? user.kyc_status ?? fallback?.kycStatus ?? null,
+    ...detail,
+    accounts: normalizedAccounts,
+    activity: normalizedActivity,
   }
 }
 
@@ -292,7 +354,7 @@ export default function UsersPage() {
   const [userDetailError, setUserDetailError] = useState<string | null>(null)
   const [isDetailStatusUpdating, setIsDetailStatusUpdating] = useState(false)
   const [isDetailVerifying, setIsDetailVerifying] = useState(false)
-  const [isUpdatingIb, setIsUpdatingIb] = useState(false)
+  const [isDetailIbUpdating, setIsDetailIbUpdating] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeletingUser, setIsDeletingUser] = useState(false)
 
@@ -367,7 +429,7 @@ export default function UsersPage() {
       try {
         const response = await adminService.getUser(userId)
         if (response.success && response.data) {
-          setSelectedUserDetail(response.data)
+          setSelectedUserDetail(normalizeAdminUserDetail(response.data))
         } else {
           throw new Error(response.error?.message ?? "Failed to load user details")
         }
@@ -539,8 +601,8 @@ export default function UsersPage() {
   }, [])
 
   const handleUserDetailDialogChange = useCallback((open: boolean) => {
-    setIsUserDetailOpen(open)
     if (!open) {
+      setIsUserDetailOpen(false)
       setSelectedUserId(null)
       setSelectedUserPreview(null)
       setSelectedUserDetail(null)
@@ -548,6 +610,7 @@ export default function UsersPage() {
       setIsLoadingUserDetail(false)
       setIsDetailStatusUpdating(false)
       setIsDetailVerifying(false)
+      setIsDetailIbUpdating(false)
       setIsDeleteDialogOpen(false)
       setIsDeletingUser(false)
     }
@@ -597,11 +660,25 @@ export default function UsersPage() {
       country: detail?.country ?? null,
     }
 
+    const hasIbRaw = detail?.has_ib ?? detail?.hasIb ?? null
+    const ibHasRole = typeof hasIbRaw === "number" ? hasIbRaw === 1 : Boolean(hasIbRaw)
+    const ibStatusRaw = detail?.ib_application_status ?? detail?.ibApplicationStatus ?? null
+    const ibStatus = normalizeIbStatus(
+      typeof ibStatusRaw === "string" ? ibStatusRaw : null,
+      ibHasRole,
+    )
+    const ibUpdatedAt = detail?.ib_application_updated_at ?? detail?.ibApplicationUpdatedAt ?? null
+    const ibCreatedAt = detail?.ib_application_created_at ?? detail?.ibApplicationCreatedAt ?? null
+
     const accounts = selectedUserDetail?.accounts ?? []
     const activity = selectedUserDetail?.activity ?? []
+    const hasDetail = Boolean(selectedUserDetail)
 
-    const totalBalance = preview?.totalBalance ?? accounts.reduce((sum, account) => sum + Number(account.balance || 0), 0)
-    const tradingAccountsCount = preview?.tradingAccountsCount ?? accounts.length
+    const accountsTotal = accounts.reduce((sum, account) => sum + parseNumeric(account.balance), 0)
+    const totalBalance = hasDetail ? accountsTotal : preview?.totalBalance ?? accountsTotal
+    const tradingAccountsCount = hasDetail
+      ? accounts.length
+      : preview?.tradingAccountsCount ?? accounts.length
 
     const fullName = buildFullName(firstName, lastName, email)
 
@@ -623,6 +700,10 @@ export default function UsersPage() {
       activity,
       tradingAccountsCount,
       totalBalance,
+      ibStatus,
+      ibUpdatedAt,
+      ibCreatedAt,
+      ibHasRole,
     }
   }, [selectedUserDetail, selectedUserPreview])
 
@@ -735,6 +816,65 @@ export default function UsersPage() {
       })
     } finally {
       setIsDetailVerifying(false)
+    }
+  }, [detailSnapshot, fetchStats, fetchUserDetail, fetchUsers, toast])
+
+  const handleDetailIbToggle = useCallback(async () => {
+    if (!detailSnapshot?.id) {
+      return
+    }
+
+    const isApproved = detailSnapshot.ibStatus === "approved"
+    const displayName = detailSnapshot.fullName
+
+    try {
+      setIsDetailIbUpdating(true)
+      const response = isApproved
+        ? await adminService.revokeIb(detailSnapshot.id)
+        : await adminService.approveIb(detailSnapshot.id)
+
+      if (!response.success) {
+        throw new Error(response.error?.message ?? "Failed to update IB access")
+      }
+
+      const responseStatus = typeof response.data?.ibStatus === "string" ? response.data.ibStatus : null
+      const nextStatus = normalizeIbStatus(responseStatus, !isApproved)
+
+      toast({
+        title: isApproved ? "IB access revoked" : "IB access approved",
+        description: `${displayName} is now ${formatStatus(nextStatus)}.`,
+      })
+
+      const timestamp = new Date().toISOString()
+
+      setSelectedUserDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              user: {
+                ...prev.user,
+                has_ib: nextStatus === "approved" ? 1 : 0,
+                hasIb: nextStatus === "approved",
+                ib_application_status: nextStatus,
+                ibApplicationStatus: nextStatus,
+                ib_application_updated_at: timestamp,
+                ibApplicationUpdatedAt: timestamp,
+              },
+            }
+          : prev
+      )
+
+      await Promise.all([fetchUsers(), fetchStats()])
+      await fetchUserDetail(detailSnapshot.id)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update IB access"
+      toast({
+        variant: "destructive",
+        title: "IB update failed",
+        description: message,
+      })
+    } finally {
+      setIsDetailIbUpdating(false)
     }
   }, [detailSnapshot, fetchStats, fetchUserDetail, fetchUsers, toast])
 
@@ -1302,221 +1442,252 @@ export default function UsersPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isUserDetailOpen} onOpenChange={handleUserDetailDialogChange}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>User details</DialogTitle>
-              <DialogDescription>
-                {detailSnapshot ? `Review and manage ${detailSnapshot.fullName}.` : "Select a user to view their profile."}
-              </DialogDescription>
-            </DialogHeader>
+  <Dialog open={isUserDetailOpen} onOpenChange={handleUserDetailDialogChange} modal={false}>
+          <DialogContent className="w-[calc(100vw-1.5rem)] max-w-4xl md:max-w-5xl overflow-hidden p-0">
+            <div className="flex h-full max-h-[80vh] flex-col">
+              <DialogHeader className="border-b border-border/40 px-4 py-3 text-left sm:px-6 sm:py-4">
+                <DialogTitle>User details</DialogTitle>
+                <DialogDescription>
+                  {detailSnapshot ? `Review and manage ${detailSnapshot.fullName}.` : "Select a user to view their profile."}
+                </DialogDescription>
+              </DialogHeader>
 
-            {detailSnapshot ? (
-              <div className="space-y-6">
-                {isLoadingUserDetail && (
-                  <div className="flex items-center space-x-2 rounded-md border border-dashed border-border/40 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Refreshing latest profile data…</span>
-                  </div>
-                )}
-
-                {userDetailError && (
-                  <Alert variant="destructive">
-                    <AlertTitle>Some information may be missing</AlertTitle>
-                    <AlertDescription>{userDetailError}</AlertDescription>
-                  </Alert>
-                )}
-
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <h3 className="text-lg font-semibold">{detailSnapshot.fullName}</h3>
-                    <p className="text-sm text-muted-foreground">{detailSnapshot.email}</p>
-                    <p className="text-xs text-muted-foreground">Joined {formatDate(detailSnapshot.createdAt)}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant={
-                        detailSnapshot.status === "active"
-                          ? "default"
-                          : detailSnapshot.status === "suspended"
-                            ? "destructive"
-                            : "outline"
-                      }
-                      className="capitalize"
-                    >
-                      {formatStatus(detailSnapshot.status)}
-                    </Badge>
-                    {detailSnapshot.role && (
-                      <Badge variant="outline" className="capitalize">
-                        {formatStatus(detailSnapshot.role)}
-                      </Badge>
-                    )}
-                    <Badge
-                      variant="outline"
-                      className={detailSnapshot.isVerified ? "border-green-500/60 text-green-600" : "border-yellow-500/60 text-yellow-600"}
-                    >
-                      {detailSnapshot.isVerified ? "Verified" : "Unverified"}
-                    </Badge>
-                    {detailSnapshot.kycStatus && (
-                      <Badge variant="outline" className="capitalize">
-                        KYC: {formatStatus(detailSnapshot.kycStatus)}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    variant={detailSnapshot.status === "suspended" ? "secondary" : "outline"}
-                    onClick={handleDetailStatusChange}
-                    disabled={isDetailStatusUpdating}
-                  >
-                    {isDetailStatusUpdating ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : detailSnapshot.status === "suspended" ? (
-                      <Unlock className="mr-2 h-4 w-4" />
-                    ) : (
-                      <Lock className="mr-2 h-4 w-4" />
-                    )}
-                    {detailSnapshot.status === "suspended" ? "Unlock user" : "Lock user"}
-                  </Button>
-                  <Button variant="outline" onClick={handleDetailVerificationToggle} disabled={isDetailVerifying}>
-                    {isDetailVerifying ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : detailSnapshot.isVerified ? (
-                      <ShieldOff className="mr-2 h-4 w-4" />
-                    ) : (
-                      <ShieldCheck className="mr-2 h-4 w-4" />
-                    )}
-                    {detailSnapshot.isVerified ? "Mark as unverified" : "Verify user"}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => setIsDeleteDialogOpen(true)}
-                    disabled={isDeletingUser}
-                  >
-                    {isDeletingUser ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="mr-2 h-4 w-4" />
-                    )}
-                    Delete user
-                  </Button>
-                </div>
-
-                <Separator />
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Contact</h4>
-                    <div className="rounded-md border border-border/40 p-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Email</span>
-                        <span className="font-medium">{detailSnapshot.email}</span>
+              <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
+                {detailSnapshot ? (
+                  <div className="space-y-6">
+                    {isLoadingUserDetail && (
+                      <div className="flex items-center gap-2 rounded-md border border-dashed border-border/40 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Refreshing latest profile data…</span>
                       </div>
-                      <div className="mt-2 flex justify-between">
-                        <span className="text-muted-foreground">Phone</span>
-                        <span className="font-medium">{detailSnapshot.phone || "—"}</span>
-                      </div>
-                      <div className="mt-2 flex justify-between">
-                        <span className="text-muted-foreground">Last login</span>
-                        <span className="font-medium">{formatLastLogin(detailSnapshot.lastLoginAt)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Address</h4>
-                    <div className="rounded-md border border-border/40 p-3 text-sm">
-                      <p className="font-medium">
-                        {detailSnapshot.address.line1 || "No address on file"}
-                      </p>
-                      {detailSnapshot.address.line2 && <p className="font-medium">{detailSnapshot.address.line2}</p>}
-                      {(detailSnapshot.address.city || detailSnapshot.address.state || detailSnapshot.address.postalCode) && (
-                        <p className="font-medium text-muted-foreground">
-                          {[detailSnapshot.address.city, detailSnapshot.address.state, detailSnapshot.address.postalCode]
-                            .filter(Boolean)
-                            .join(", ")}
-                        </p>
-                      )}
-                      {detailSnapshot.address.country && (
-                        <p className="font-medium text-muted-foreground">{detailSnapshot.address.country}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                    )}
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Trading accounts</h4>
-                    <span className="text-sm text-muted-foreground">
-                      {detailSnapshot.tradingAccountsCount} total • {formatCurrency(detailSnapshot.totalBalance)}
-                    </span>
-                  </div>
-                  {isLoadingUserDetail && detailSnapshot.accounts.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
-                      Loading accounts…
-                    </div>
-                  ) : detailSnapshot.accounts.length ? (
-                    <div className="space-y-2">
-                      {detailSnapshot.accounts.map((account) => (
-                        <div key={account.id} className="rounded-md border border-border/40 p-3 text-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="font-semibold">{account.account_number}</div>
-                            <Badge variant="outline" className="capitalize">
-                              {formatStatus(account.status)}
-                            </Badge>
-                          </div>
-                          <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                            <span>Type: {formatStatus(account.account_type)}</span>
-                            <span>Balance: {formatCurrency(Number(account.balance) || 0)}</span>
-                            <span>Equity: {formatCurrency(Number(account.equity) || 0)}</span>
-                            <span>Free margin: {formatCurrency(Number(account.free_margin) || 0)}</span>
-                            <span>Leverage: {Number(account.leverage) || 0}x</span>
-                            <span>Opened: {formatDate(account.created_at)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
-                      No trading accounts yet.
-                    </div>
-                  )}
-                </div>
+                    {userDetailError && (
+                      <Alert variant="destructive">
+                        <AlertTitle>Some information may be missing</AlertTitle>
+                        <AlertDescription>{userDetailError}</AlertDescription>
+                      </Alert>
+                    )}
 
-                <div className="space-y-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</h4>
-                  {isLoadingUserDetail && detailSnapshot.activity.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
-                      Gathering recent activity…
-                    </div>
-                  ) : detailSnapshot.activity.length ? (
-                    <div className="space-y-2 text-sm">
-                      {detailSnapshot.activity.map((item, index) => (
-                        <div
-                          key={`${item.type}-${item.created_at}-${index}`}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/40 p-3"
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <h3 className="text-lg font-semibold leading-tight">{detailSnapshot.fullName}</h3>
+                        <p className="break-all text-sm text-muted-foreground">{detailSnapshot.email}</p>
+                        <p className="text-xs text-muted-foreground">Joined {formatDate(detailSnapshot.createdAt)}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs sm:text-sm">
+                        <Badge
+                          variant={
+                            detailSnapshot.status === "active"
+                              ? "default"
+                              : detailSnapshot.status === "suspended"
+                                ? "destructive"
+                                : "outline"
+                          }
+                          className="capitalize"
                         >
-                          <div>
-                            <p className="font-medium capitalize">{item.action}</p>
-                            <p className="text-xs text-muted-foreground">{item.symbol ?? "—"}</p>
-                          </div>
-                          <span className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</span>
+                          {formatStatus(detailSnapshot.status)}
+                        </Badge>
+                        {detailSnapshot.role && (
+                          <Badge variant="outline" className="capitalize">
+                            {formatStatus(detailSnapshot.role)}
+                          </Badge>
+                        )}
+                        <Badge
+                          variant="outline"
+                          className={detailSnapshot.isVerified ? "border-green-500/60 text-green-600" : "border-yellow-500/60 text-yellow-600"}
+                        >
+                          {detailSnapshot.isVerified ? "Verified" : "Unverified"}
+                        </Badge>
+                        {detailSnapshot.kycStatus && (
+                          <Badge variant="outline" className="capitalize">
+                            KYC: {formatStatus(detailSnapshot.kycStatus)}
+                          </Badge>
+                        )}
+                        <Badge variant="outline" className={getIbBadgeClass(detailSnapshot.ibStatus)}>
+                          IB: {formatStatus(detailSnapshot.ibStatus)}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Button
+                        variant={detailSnapshot.status === "active" ? "destructive" : "outline"}
+                        className="justify-start gap-2"
+                        onClick={handleDetailStatusChange}
+                        disabled={isDetailStatusUpdating}
+                      >
+                        {isDetailStatusUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : detailSnapshot.status === "active" ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                        {detailSnapshot.status === "active" ? "Lock user" : "Unlock user"}
+                      </Button>
+                      <Button
+                        variant={detailSnapshot.isVerified ? "outline" : "default"}
+                        className="justify-start gap-2"
+                        onClick={handleDetailVerificationToggle}
+                        disabled={isDetailVerifying}
+                      >
+                        {isDetailVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : detailSnapshot.isVerified ? <ShieldCheck className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}
+                        {detailSnapshot.isVerified ? "Mark as unverified" : "Mark as verified"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="justify-start gap-2"
+                        onClick={handleDetailIbToggle}
+                        disabled={isDetailIbUpdating}
+                      >
+                        {isDetailIbUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : detailSnapshot.ibStatus === "approved" ? <Link2Off className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+                        {detailSnapshot.ibStatus === "approved" ? "Revoke IB access" : "Approve IB access"}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        className="justify-start gap-2"
+                        onClick={() => setIsDeleteDialogOpen(true)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete user
+                      </Button>
+                    </div>
+
+                    <div className="rounded-lg border border-border/40 bg-muted/20 p-3 sm:p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:text-sm">Introducing Broker</h4>
+                          <p className="text-sm font-medium text-foreground">
+                            {detailSnapshot.ibStatus === "approved"
+                              ? "IB access active"
+                              : detailSnapshot.ibStatus === "pending"
+                                ? "Awaiting admin review"
+                                : detailSnapshot.ibStatus === "rejected"
+                                  ? "IB access revoked"
+                                  : "No IB application on file"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {detailSnapshot.ibUpdatedAt
+                              ? `Last updated ${formatDateTime(detailSnapshot.ibUpdatedAt)}`
+                              : "No review history recorded yet."}
+                          </p>
                         </div>
-                      ))}
+                        <Badge variant="outline" className={getIbBadgeClass(detailSnapshot.ibStatus)}>
+                          {formatStatus(detailSnapshot.ibStatus)}
+                        </Badge>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
-                      No recent activity recorded.
+
+                    <Separator />
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:text-sm">Contact</h4>
+                        <div className="rounded-lg border border-border/40 p-3 text-sm sm:p-4">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs uppercase tracking-wide text-muted-foreground">Email</span>
+                            <span className="break-all font-medium">{detailSnapshot.email}</span>
+                          </div>
+                          <div className="mt-3 flex flex-col gap-1">
+                            <span className="text-xs uppercase tracking-wide text-muted-foreground">Phone</span>
+                            <span className="font-medium">{detailSnapshot.phone || "—"}</span>
+                          </div>
+                          <div className="mt-3 flex flex-col gap-1">
+                            <span className="text-xs uppercase tracking-wide text-muted-foreground">Last login</span>
+                            <span className="font-medium">{formatLastLogin(detailSnapshot.lastLoginAt)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:text-sm">Address</h4>
+                        <div className="rounded-lg border border-border/40 p-3 text-sm sm:p-4">
+                          <p className="font-medium">
+                            {detailSnapshot.address.line1 || "No address on file"}
+                          </p>
+                          {detailSnapshot.address.line2 && <p className="font-medium">{detailSnapshot.address.line2}</p>}
+                          {(detailSnapshot.address.city || detailSnapshot.address.state || detailSnapshot.address.postalCode) && (
+                            <p className="font-medium text-muted-foreground">
+                              {[detailSnapshot.address.city, detailSnapshot.address.state, detailSnapshot.address.postalCode]
+                                .filter(Boolean)
+                                .join(", ")}
+                            </p>
+                          )}
+                          {detailSnapshot.address.country && (
+                            <p className="font-medium text-muted-foreground">{detailSnapshot.address.country}</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
+
+                    <div className="space-y-3">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:text-sm">Trading accounts</h4>
+                        <span className="text-xs text-muted-foreground sm:text-sm">
+                          {detailSnapshot.tradingAccountsCount} total • {formatCurrency(detailSnapshot.totalBalance)}
+                        </span>
+                      </div>
+                      {isLoadingUserDetail && detailSnapshot.accounts.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
+                          Loading accounts…
+                        </div>
+                      ) : detailSnapshot.accounts.length ? (
+                        <div className="space-y-2">
+                          {detailSnapshot.accounts.map((account) => (
+                            <div key={account.id} className="rounded-lg border border-border/40 p-3 text-sm sm:p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="font-semibold">{account.account_number}</div>
+                                <Badge variant="outline" className="capitalize">
+                                  {formatStatus(account.status)}
+                                </Badge>
+                              </div>
+                              <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2 sm:gap-y-2">
+                                <span>Type: {formatStatus(account.account_type)}</span>
+                                <span>Balance: {formatCurrency(Number(account.balance) || 0)}</span>
+                                <span>Equity: {formatCurrency(Number(account.equity) || 0)}</span>
+                                <span>Free margin: {formatCurrency(Number(account.free_margin) || 0)}</span>
+                                <span>Leverage: {Number(account.leverage) || 0}x</span>
+                                <span>Opened: {formatDate(account.created_at)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
+                          No trading accounts yet.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:text-sm">Recent activity</h4>
+                      {isLoadingUserDetail && detailSnapshot.activity.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
+                          Gathering recent activity…
+                        </div>
+                      ) : detailSnapshot.activity.length ? (
+                        <div className="space-y-2 text-sm">
+                          {detailSnapshot.activity.map((item, index) => (
+                            <div
+                              key={`${item.type}-${item.created_at}-${index}`}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/40 p-3 sm:p-4"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-medium capitalize">{item.action}</p>
+                                <p className="truncate text-xs text-muted-foreground">{item.symbol ?? "—"}</p>
+                              </div>
+                              <span className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
+                          No recent activity recorded.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-10 text-center text-sm text-muted-foreground">
+                    Select a user from the table to view their profile.
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="py-10 text-center text-sm text-muted-foreground">
-                Select a user from the table to view their profile.
-              </div>
-            )}
+            </div>
           </DialogContent>
         </Dialog>
 
@@ -1606,4 +1777,17 @@ const ADD_USER_DEFAULT_VALUES: AddUserFormValues = {
   status: "active",
   emailVerified: false,
   kycStatus: "pending",
+}
+
+const getIbBadgeClass = (status: IbStatus) => {
+  switch (status) {
+    case "approved":
+      return "border-green-500/60 text-green-600"
+    case "pending":
+      return "border-yellow-500/60 text-yellow-600"
+    case "rejected":
+      return "border-red-500/60 text-red-600"
+    default:
+      return "border-muted-foreground/40 text-muted-foreground"
+  }
 }

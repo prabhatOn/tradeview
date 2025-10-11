@@ -7,6 +7,20 @@ import {
   UpdateProfileRequest 
 } from './types';
 
+const resolveApiBaseUrl = () => {
+  if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== '') {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location;
+    const port = process.env.NEXT_PUBLIC_API_PORT || '3001';
+    return `${protocol}//${hostname}:${port}/api`;
+  }
+
+  return 'http://localhost:3001/api';
+};
+
 class ApiClient {
   private baseURL: string;
   private accessToken: string | null = null;
@@ -22,6 +36,21 @@ class ApiClient {
     }
   }
 
+  private buildCookieAttributes(maxAgeSeconds?: number) {
+    const attributes: string[] = ['path=/'];
+    if (typeof maxAgeSeconds === 'number' && Number.isFinite(maxAgeSeconds)) {
+      attributes.push(`max-age=${Math.floor(maxAgeSeconds)}`);
+    }
+
+    const isSecureContext = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    if (isSecureContext) {
+      attributes.push('Secure');
+    }
+
+    attributes.push('SameSite=Strict');
+    return attributes.join('; ');
+  }
+
   private getCookieValue(name: string): string | null {
     if (typeof document === 'undefined') return null;
     const value = `; ${document.cookie}`;
@@ -33,8 +62,8 @@ class ApiClient {
   private saveTokenToStorage(token: string) {
     if (typeof window !== 'undefined') {
       localStorage.setItem('accessToken', token);
-      // Also set cookie for middleware
-      document.cookie = `accessToken=${token}; path=/; max-age=${24 * 60 * 60}; secure; samesite=strict`;
+      const attributes = this.buildCookieAttributes(24 * 60 * 60);
+      document.cookie = `accessToken=${token}; ${attributes}`;
     }
   }
 
@@ -43,7 +72,8 @@ class ApiClient {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       // Also remove cookie
-      document.cookie = 'accessToken=; path=/; max-age=0';
+      const attributes = this.buildCookieAttributes();
+      document.cookie = `accessToken=; ${attributes}; max-age=0`;
     }
   }
 
@@ -124,8 +154,8 @@ class ApiClient {
         const data = await response.json();
         this.setAccessToken(data.data.accessToken);
         localStorage.setItem('refreshToken', data.data.refreshToken);
-        // Also update refresh token cookie
-        document.cookie = `refreshToken=${data.data.refreshToken}; path=/; max-age=${24 * 60 * 60}; secure; samesite=strict`;
+        const attributes = this.buildCookieAttributes(24 * 60 * 60);
+        document.cookie = `refreshToken=${data.data.refreshToken}; ${attributes}`;
         return true;
       }
     } catch (error) {
@@ -159,8 +189,8 @@ class ApiClient {
     if (response.success && response.data) {
       this.setAccessToken(response.data.tokens.accessToken);
       localStorage.setItem('refreshToken', response.data.tokens.refreshToken);
-      // Also set refresh token cookie
-      document.cookie = `refreshToken=${response.data.tokens.refreshToken}; path=/; max-age=${24 * 60 * 60}; secure; samesite=strict`;
+      const attributes = this.buildCookieAttributes(24 * 60 * 60);
+      document.cookie = `refreshToken=${response.data.tokens.refreshToken}; ${attributes}`;
     }
 
     return response;
@@ -239,7 +269,7 @@ class ApiClient {
 }
 
 // Create singleton instance
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = resolveApiBaseUrl();
 export const apiClient = new ApiClient(API_BASE_URL);
 
 export default apiClient;

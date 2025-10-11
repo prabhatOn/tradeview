@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { apiClient } from './api-client';
 import {
   User,
@@ -10,7 +11,6 @@ import {
   Notification,
   PriceAlert,
   TradingStats,
-  AccountSummary,
   MarketStats,
   UserSettings,
   CreatePositionRequest,
@@ -24,15 +24,72 @@ import {
   AdminDashboardStats,
   AdminCreateUserPayload,
   AdminUpdateVerificationPayload,
-  AdminUserDetail
+  AdminUserDetail,
+  AdminFundsOverview,
+  AdminFundsTransactionsResponse,
+  AdminFundsChartPoint,
+  AdminTradingOverview,
+  AdminTradingPositionsResponse,
+  AdminTradingHistoryResponse,
+  AdminTradingAccountsResponse,
+  AdminTradingPosition,
+  PaymentGateway,
+  BankAccount,
+  FundingMethod,
+  FundingMethodsPayload
 } from './types';
+
+type CreatePaymentGatewayPayload = {
+  name: string;
+  displayName: string;
+  type: PaymentGateway['type'];
+  provider?: string | null;
+  minAmount?: number;
+  maxAmount?: number;
+  processingFeeType?: 'fixed' | 'percentage';
+  processingFeeValue?: number;
+  processingTimeHours?: number;
+  supportedCurrencies?: string[];
+  description?: string | null;
+  iconUrl?: string | null;
+  configuration?: Record<string, any>;
+};
+
+type UpdatePaymentGatewayPayload = Partial<Omit<CreatePaymentGatewayPayload, 'name' | 'type'>> & {
+  isActive?: boolean;
+  sortOrder?: number;
+};
+
+type CreateBankAccountPayload = {
+  label: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  accountType?: 'personal' | 'business';
+  iban?: string | null;
+  swiftCode?: string | null;
+  routingNumber?: string | null;
+  branchName?: string | null;
+  branchAddress?: string | null;
+  country?: string | null;
+  currency?: string;
+  instructions?: string | null;
+  isActive?: boolean;
+  paymentGatewayId?: number | null;
+  currentBalance?: number;
+  metadata?: Record<string, any>;
+};
+
+type UpdateBankAccountPayload = Partial<CreateBankAccountPayload> & {
+  sortOrder?: number;
+};
 
 // Authentication Services
 export const authService = {
   login: (credentials: { email: string; password: string }) =>
     apiClient.login(credentials),
   
-  register: (userData: { email: string; password: string; firstName: string; lastName: string; phone?: string; acceptTerms: boolean }) =>
+  register: (userData: { email: string; password: string; firstName: string; lastName: string; phone?: string; referralCode?: string; acceptTerms: boolean }) =>
     apiClient.register(userData),
   
   logout: () => apiClient.logout(),
@@ -185,10 +242,79 @@ export const transactionService = {
     apiClient.get('/transactions/summary'),
 };
 
+export const fundsService = {
+  getFundingMethods: (): Promise<ApiResponse<FundingMethodsPayload>> =>
+    apiClient.get('/funds/methods'),
+};
+
 // Admin Services (for admin users)
 export const adminService = {
   getDashboardStats: (): Promise<ApiResponse<AdminDashboardStats>> =>
     apiClient.get('/admin/dashboard'),
+
+  getFundsOverview: (): Promise<ApiResponse<AdminFundsOverview>> =>
+    apiClient.get('/admin/funds/overview'),
+
+  getFundsChart: (range: '7d' | '14d' | '30d' | '90d' = '30d'): Promise<ApiResponse<AdminFundsChartPoint[]>> =>
+    apiClient.get('/admin/funds/chart', { range }),
+
+  getFundsTransactions: (params: {
+    type?: 'deposits' | 'withdrawals';
+    page?: number;
+    limit?: number;
+    status?: string;
+    search?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  } = {}): Promise<ApiResponse<AdminFundsTransactionsResponse>> =>
+    apiClient.get('/admin/funds/transactions', params),
+
+  approveFundsDeposit: (
+    id: number,
+    payload: { notes?: string; adminNotes?: string } = {}
+  ): Promise<ApiResponse<any>> => apiClient.post(`/admin/funds/deposits/${id}/approve`, payload),
+
+  rejectFundsDeposit: (
+    id: number,
+    payload: { notes?: string; adminNotes?: string } = {}
+  ): Promise<ApiResponse<any>> => apiClient.post(`/admin/funds/deposits/${id}/reject`, payload),
+
+  approveFundsWithdrawal: (
+    id: number,
+    payload: { notes?: string; adminNotes?: string } = {}
+  ): Promise<ApiResponse<any>> => apiClient.post(`/admin/funds/withdrawals/${id}/approve`, payload),
+
+  rejectFundsWithdrawal: (
+    id: number,
+    payload: { notes?: string; adminNotes?: string } = {}
+  ): Promise<ApiResponse<any>> => apiClient.post(`/admin/funds/withdrawals/${id}/reject`, payload),
+
+  batchProcessFunds: (
+    payload: {
+      action: 'approve' | 'reject';
+      type: 'deposits' | 'withdrawals';
+      ids: number[];
+      notes?: string;
+    }
+  ): Promise<ApiResponse<any>> => apiClient.post('/admin/funds/batch', payload),
+
+  applyFundsManualAdjustment: (
+    payload: {
+      accountId: number;
+      amount: number;
+      direction?: 'credit' | 'debit';
+      reasonCode?: string;
+      notes?: string;
+      metadata?: Record<string, any>;
+    }
+  ): Promise<ApiResponse<any>> => apiClient.post('/admin/funds/adjustments', payload),
+
+  exportFundsTransactions: (params: {
+    type?: 'deposits' | 'withdrawals';
+    status?: string;
+    search?: string;
+  } = {}): Promise<ApiResponse<{ rows: any[]; generatedAt: string }>> =>
+    apiClient.get('/admin/funds/export', params),
   
   getUsers: (params: Record<string, unknown> = {}): Promise<ApiResponse<AdminUsersResponse>> =>
     apiClient.get('/admin/users', params),
@@ -228,6 +354,108 @@ export const adminService = {
   
   getTradingStats: (range = '30'): Promise<ApiResponse<any>> =>
     apiClient.get('/admin/trading/stats', { range }),
+
+  getTradingOverview: (): Promise<ApiResponse<AdminTradingOverview>> =>
+  apiClient.get('/admin/trading/overview'),
+
+  getTradingPositions: (params: {
+    status?: 'open' | 'closed' | 'all';
+    search?: string;
+    symbol?: string;
+    side?: 'buy' | 'sell';
+    page?: number;
+    limit?: number;
+    sortBy?: 'opened_at' | 'closed_at' | 'profit' | 'lot_size' | 'symbol' | 'user' | 'account' | 'status';
+    sortOrder?: 'asc' | 'desc';
+  } = {}): Promise<ApiResponse<AdminTradingPositionsResponse>> =>
+    apiClient.get('/admin/trading/positions', params),
+
+  getTradingPosition: (id: number): Promise<ApiResponse<AdminTradingPosition>> =>
+    apiClient.get(`/admin/trading/positions/${id}`),
+
+  updateTradingPosition: (id: number, payload: {
+    lotSize?: number;
+    stopLoss?: number | null;
+    takeProfit?: number | null;
+    comment?: string | null;
+  }): Promise<ApiResponse<AdminTradingPosition>> =>
+    apiClient.patch(`/admin/trading/positions/${id}`, payload),
+
+  closeTradingPosition: (id: number, payload: {
+    closePrice?: number;
+    closeReason?: 'manual' | 'stop_loss' | 'take_profit' | 'system' | 'margin_call';
+  } = {}): Promise<ApiResponse<{ positionId: number; finalProfit: number; closePrice: number; closeReason?: string }>> =>
+    apiClient.post(`/admin/trading/positions/${id}/close`, payload),
+
+  openTradingPosition: (payload: {
+    accountId: number;
+    symbolId: number;
+    side: 'buy' | 'sell';
+    lotSize: number;
+    stopLoss?: number | null;
+    takeProfit?: number | null;
+    comment?: string | null;
+  }): Promise<ApiResponse<AdminTradingPosition>> =>
+    apiClient.post('/admin/trading/positions', payload),
+
+  getTradingHistory: (params: {
+    search?: string;
+    symbol?: string;
+    side?: 'buy' | 'sell';
+    accountId?: number;
+    userId?: number;
+    page?: number;
+    limit?: number;
+    dateFrom?: string;
+    dateTo?: string;
+    sortBy?: 'closed_at' | 'profit' | 'lot_size' | 'symbol' | 'user' | 'account';
+    sortOrder?: 'asc' | 'desc';
+  } = {}): Promise<ApiResponse<AdminTradingHistoryResponse>> =>
+    apiClient.get('/admin/trading/history', params),
+
+  getTradingAccounts: (params: {
+    search?: string;
+    status?: 'active' | 'inactive' | 'frozen' | 'closed';
+    page?: number;
+    limit?: number;
+  } = {}): Promise<ApiResponse<AdminTradingAccountsResponse>> =>
+    apiClient.get('/admin/trading/accounts', params),
+
+  getPaymentGateways: (): Promise<ApiResponse<PaymentGateway[]>> =>
+    apiClient.get('/payment-gateways/admin'),
+
+  createPaymentGateway: (payload: CreatePaymentGatewayPayload): Promise<ApiResponse<{ id: number; message?: string }>> =>
+    apiClient.post('/payment-gateways/admin', payload),
+
+  updatePaymentGateway: (id: number, payload: UpdatePaymentGatewayPayload): Promise<ApiResponse<any>> =>
+    apiClient.put(`/payment-gateways/admin/${id}`, payload),
+
+  deletePaymentGateway: (id: number): Promise<ApiResponse<void>> =>
+    apiClient.delete(`/payment-gateways/admin/${id}`),
+
+  togglePaymentGateway: (id: number): Promise<ApiResponse<any>> =>
+    apiClient.patch(`/payment-gateways/admin/${id}/toggle`),
+
+  reorderPaymentGateways: (gatewayIds: number[]): Promise<ApiResponse<void>> =>
+    apiClient.post('/payment-gateways/admin/reorder', { gatewayIds }),
+
+  getBankAccounts: (): Promise<ApiResponse<BankAccount[]>> =>
+    apiClient.get('/payment-gateways/admin/banks'),
+
+  createBankAccount: (payload: CreateBankAccountPayload): Promise<ApiResponse<{ id: number }>> =>
+    apiClient.post('/payment-gateways/admin/banks', payload),
+
+  updateBankAccount: (id: number, payload: UpdateBankAccountPayload): Promise<ApiResponse<void>> =>
+    apiClient.put(`/payment-gateways/admin/banks/${id}`, payload),
+
+  deleteBankAccount: (id: number): Promise<ApiResponse<void>> =>
+    apiClient.delete(`/payment-gateways/admin/banks/${id}`),
+
+  toggleBankAccount: (id: number): Promise<ApiResponse<any>> =>
+    apiClient.patch(`/payment-gateways/admin/banks/${id}/toggle`),
+
+  reorderBankAccounts: (bankIds: number[]): Promise<ApiResponse<void>> =>
+    apiClient.post('/payment-gateways/admin/banks/reorder', { bankIds }),
   
   getSystemSettings: (): Promise<ApiResponse<{ settings: any }>> =>
     apiClient.get('/admin/settings'),

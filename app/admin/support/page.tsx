@@ -12,7 +12,6 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   LayoutDashboard,
   Users,
-  Building2,
   Receipt,
   TrendingUp,
   HeadphonesIcon,
@@ -27,26 +26,18 @@ import {
   CheckCircle2,
   XCircle,
   RefreshCw,
-  Filter,
   MoreHorizontal,
   User,
   Calendar,
-  Tag,
   Flag,
   UserCheck,
   Reply,
-  Archive,
-  Trash2,
-  Send,
-  Paperclip,
-  Star,
   ArrowRight
 } from "lucide-react"
 
 const adminSidebarItems = [
   { title: "Overview", icon: LayoutDashboard, href: "/admin", description: "Dashboard overview and analytics" },
   { title: "User Management", icon: Users, href: "/admin/users", description: "Manage users and accounts" },
-  { title: "MAM/PAMM", icon: Building2, href: "/admin/mam-pamm", description: "Multi-account management" },
   { title: "Trades & Charges", icon: Receipt, href: "/admin/trades-charges", description: "Trading fees and charges" },
   { title: "Trades", icon: TrendingUp, href: "/admin/trades", description: "Trading activities monitoring" },
   { title: "Support Tickets", icon: HeadphonesIcon, href: "/admin/support", description: "Customer support management" },
@@ -139,9 +130,6 @@ export default function SupportTicketsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [priorityFilter, setPriorityFilter] = useState("all")
-  const [selectedTicket, setSelectedTicket] = useState(null)
-  const [showNewTicketDialog, setShowNewTicketDialog] = useState(false)
-
   const totalTickets = supportTickets.length
   const openTickets = supportTickets.filter(ticket => ticket.status === 'open').length
   const inProgressTickets = supportTickets.filter(ticket => ticket.status === 'in-progress').length

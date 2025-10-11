@@ -1,7 +1,11 @@
+/* eslint-disable import/no-commonjs */
+/* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable @typescript-eslint/no-require-imports */
 const express = require('express');
 const Joi = require('joi');
 const { executeQuery } = require('../config/database');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
+const NotificationService = require('../services/NotificationService');
 const User = require('../models/User');
 const TradingAccount = require('../models/TradingAccount');
 
@@ -288,49 +292,31 @@ router.delete('/addresses/:id', asyncHandler(async (req, res) => {
 
 // Get user notifications
 router.get('/notifications', asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 20;
-  const offset = (page - 1) * limit;
+  const page = Number.parseInt(req.query.page, 10) || 1;
+  const limit = Number.parseInt(req.query.limit, 10) || 20;
+  const unreadOnly = String(req.query.unreadOnly || '').toLowerCase() === 'true';
 
-  const notifications = await executeQuery(
-    `SELECT id, type, title, message, status, sent_at, read_at, created_at
-     FROM user_notifications
-     WHERE user_id = ?
-     ORDER BY created_at DESC
-     LIMIT ? OFFSET ?`,
-    [req.user.id, limit, offset]
-  );
-
-  const totalCount = await executeQuery(
-    'SELECT COUNT(*) as count FROM user_notifications WHERE user_id = ?',
-    [req.user.id]
-  );
+  const result = await NotificationService.getUserNotifications(req.user.id, page, limit, unreadOnly);
 
   res.json({
-    notifications,
-    pagination: {
-      page,
-      limit,
-      total: totalCount[0].count,
-      pages: Math.ceil(totalCount[0].count / limit)
-    }
+    success: true,
+    data: {
+      data: result.notifications,
+      pagination: result.pagination,
+    },
   });
 }));
 
 // Mark notification as read
 router.put('/notifications/:id/read', asyncHandler(async (req, res) => {
-  const notificationId = parseInt(req.params.id);
+  const notificationId = Number.parseInt(req.params.id, 10);
 
-  const result = await executeQuery(
-    'UPDATE user_notifications SET status = "read", read_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
-    [notificationId, req.user.id]
-  );
-
-  if (result.affectedRows === 0) {
+  const updated = await NotificationService.markAsRead(notificationId, req.user.id);
+  if (!updated) {
     throw new AppError('Notification not found', 404);
   }
 
-  res.json({ message: 'Notification marked as read' });
+  res.json({ success: true, message: 'Notification marked as read' });
 }));
 
 // Get user price alerts

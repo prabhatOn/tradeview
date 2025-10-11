@@ -1,7 +1,9 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { WebSocketMessage } from '@/lib/types';
+import { IbCommissionMessageData, WebSocketMessage } from '@/lib/types';
 import { useAuth } from './AuthContext';
 import { useTrading } from './TradingContext';
 import { useMarket } from './MarketContext';
@@ -25,7 +27,22 @@ interface WebSocketProviderProps {
   children: ReactNode;
 }
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+const resolveWebSocketUrl = () => {
+  if (process.env.NEXT_PUBLIC_WS_URL && process.env.NEXT_PUBLIC_WS_URL.trim() !== '') {
+    return process.env.NEXT_PUBLIC_WS_URL;
+  }
+
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location;
+    const wsProtocol = protocol === 'https:' ? 'wss' : 'ws';
+    const port = process.env.NEXT_PUBLIC_WS_PORT || '3001';
+    return `${wsProtocol}://${hostname}:${port}`;
+  }
+
+  return 'ws://localhost:3001';
+};
+
+const WS_URL = resolveWebSocketUrl();
 
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }) => {
   const [state, setState] = useState<WebSocketState>({
@@ -181,6 +198,15 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         }
         break;
 
+      case 'ib_commission_recorded':
+        if (message.userId === user?.id) {
+          const event = new CustomEvent<IbCommissionMessageData>('ibCommissionRecorded', {
+            detail: (message.data || {}) as IbCommissionMessageData,
+          });
+          window.dispatchEvent(event);
+        }
+        break;
+
       case 'notification':
         // Handle notifications
         if (message.data) {
@@ -197,9 +223,25 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         }
         break;
 
+      case 'market_prices_update': {
+        const event = new CustomEvent('marketPricesUpdate', { detail: message.data });
+        window.dispatchEvent(event);
+        break;
+      }
+
+      case 'positions_update':
+      case 'realtime_positions_update': {
+        const event = new CustomEvent('positionsUpdate', { detail: message.data });
+        window.dispatchEvent(event);
+        break;
+      }
+
       case 'error':
         console.error('WebSocket error message:', message.data);
-        setState(prev => ({ ...prev, error: message.data?.message || 'Unknown error' }));
+        {
+          const errorMessage = (message.data as { message?: string } | undefined)?.message;
+          setState(prev => ({ ...prev, error: errorMessage || 'Unknown error' }));
+        }
         break;
 
       default:
@@ -218,6 +260,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
     return () => {
       disconnect();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // Cleanup on unmount

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const express = require('express');
 const { executeQuery } = require('../config/database');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');

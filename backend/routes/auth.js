@@ -1,10 +1,14 @@
+/* eslint-disable import/no-commonjs */
+/* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable @typescript-eslint/no-require-imports */
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const Joi = require('joi');
-const { executeQuery, executeTransaction } = require('../config/database');
+const { executeQuery } = require('../config/database');
 const { generateToken } = require('../middleware/auth');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const User = require('../models/User');
+const IntroducingBrokerService = require('../services/IntroducingBrokerService');
 
 const router = express.Router();
 
@@ -52,7 +56,7 @@ router.post('/register', asyncHandler(async (req, res) => {
     throw new AppError(error.details[0].message, 400);
   }
 
-  const { email, password, firstName, lastName, phone } = value;
+  const { email, password, firstName, lastName, phone, referralCode } = value;
 
   // Check if user already exists
   const existingUser = await User.findByEmail(email);
@@ -87,6 +91,47 @@ router.post('/register', asyncHandler(async (req, res) => {
     ) VALUES (?, ?, 'demo', 'USD', 100, 100000.00, 100000.00, 100000.00, 'active')`,
     [userId, accountNumber]
   );
+
+  // Handle referral code if provided
+  if (referralCode && referralCode.trim().length > 0) {
+    const normalizedCode = referralCode.trim().toUpperCase();
+    try {
+      const [referralRows] = await executeQuery(
+        `SELECT id, user_id, is_active, usage_count, max_usage, expires_at
+         FROM referral_codes
+         WHERE code = ?
+         LIMIT 1`,
+        [normalizedCode]
+      );
+
+      if (referralRows && referralRows.is_active) {
+        const isExpired = referralRows.expires_at && new Date(referralRows.expires_at) < new Date();
+        if (!isExpired) {
+          const ibUserId = referralRows.user_id;
+          if (ibUserId !== userId) {
+            try {
+              await IntroducingBrokerService.createIbRelationship(ibUserId, email);
+
+              await executeQuery(
+                `UPDATE referral_codes
+                 SET usage_count = usage_count + 1,
+                     is_active = CASE
+                       WHEN max_usage IS NOT NULL AND usage_count + 1 >= max_usage THEN 0
+                       ELSE is_active
+                     END
+                 WHERE id = ?`,
+                [referralRows.id]
+              );
+            } catch (referralError) {
+              console.warn('Failed to create IB relationship from referral code:', referralError.message);
+            }
+          }
+        }
+      }
+    } catch (referralLookupError) {
+      console.warn('Referral code lookup failed:', referralLookupError.message);
+    }
+  }
 
   // Generate JWT token
   const token = generateToken(user.id);

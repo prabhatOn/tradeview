@@ -1,7 +1,6 @@
 import {
   LayoutDashboard,
   Users,
-  Building2,
   Receipt,
   TrendingUp,
   HeadphonesIcon,
@@ -22,12 +21,6 @@ export const adminSidebarItems: SidebarItem[] = [
     icon: Users,
     href: "/admin/users",
     description: "Manage users and accounts"
-  },
-  {
-    title: "MAM/PAMM",
-    icon: Building2,
-    href: "/admin/mam-pamm",
-    description: "Multi-account management"
   },
   {
     title: "Trades & Charges",

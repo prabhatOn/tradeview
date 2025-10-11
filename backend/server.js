@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 require('dotenv').config({ path: './.env' });
 
 // Debug environment variables
@@ -18,12 +20,10 @@ const WebSocket = require('ws');
 const cron = require('node-cron');
 
 // Import configurations and middleware
-const { dbConfig } = require('./config/database');
 const { initializeDatabase } = require('./config/database');
+const { ensurePositionsCloseColumns } = require('./utils/schemaMaintenance');
 const { authMiddleware } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
-const MarketService = require('./services/MarketService');
-const TradingService = require('./services/TradingService');
 const NotificationService = require('./services/NotificationService');
 const PositionUpdateService = require('./services/PositionUpdateService');
 const MarketDataService = require('./services/MarketDataService');
@@ -35,6 +35,7 @@ const userRoutes = require('./routes/users');
 const tradingRoutes = require('./routes/trading');
 const transactionRoutes = require('./routes/transactions');
 const adminRoutes = require('./routes/admin');
+const adminFundsRoutes = require('./routes/admin-funds');
 const marketRoutes = require('./routes/market');
 const debugRoutes = require('./routes/debug');
 const statusRoutes = require('./routes/status');
@@ -49,8 +50,12 @@ const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 const DEV_HOST = process.env.DEV_HOST || 'localhost';
 
-// Initialize database
-initializeDatabase();
+// Initialize database and ensure schema patches are applied
+initializeDatabase()
+  .then(() => ensurePositionsCloseColumns())
+  .catch((error) => {
+    console.error('Failed to initialize database or ensure schema:', error);
+  });
 
 // Security middleware
 app.use(helmet({
@@ -113,6 +118,7 @@ app.use('/api/users', authMiddleware, userRoutes);
 app.use('/api/trading', authMiddleware, tradingRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/transactions', authMiddleware, transactionRoutes);
+app.use('/api/admin/funds', authMiddleware, adminFundsRoutes);
 app.use('/api/admin', authMiddleware, adminRoutes);
 app.use('/api/api-keys', authMiddleware, apiKeysRoutes);
 app.use('/api/funds', authMiddleware, fundsRoutes);

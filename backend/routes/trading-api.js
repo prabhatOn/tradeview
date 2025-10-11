@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const express = require('express');
 const crypto = require('crypto');
 const { executeQuery } = require('../config/database');
@@ -56,7 +58,7 @@ const authenticateApiKey = async (req, res, next) => {
     try {
       ipWhitelist = apiKeyRecord.ip_whitelist ? JSON.parse(apiKeyRecord.ip_whitelist) : [];
       if (!Array.isArray(ipWhitelist)) ipWhitelist = [];
-    } catch (e) {
+    } catch {
       ipWhitelist = [];
     }
     if (ipWhitelist.length > 0) {
@@ -88,7 +90,7 @@ const authenticateApiKey = async (req, res, next) => {
           permissions = apiKeyRecord.permissions.split(',').map(p => p.trim()).filter(Boolean);
         }
       }
-    } catch (e) {
+    } catch {
       permissions = [];
     }
     req.apiUser = {
@@ -286,9 +288,9 @@ router.delete('/positions/:positionId', asyncHandler(async (req, res) => {
   // Close the position
   await executeQuery(`
     UPDATE positions 
-    SET status = 'closed', current_price = ?, profit_loss = ?, closed_at = CURRENT_TIMESTAMP
+    SET status = 'closed', current_price = ?, close_price = ?, profit = ?, profit_loss = ?, closed_at = CURRENT_TIMESTAMP, close_time = CURRENT_TIMESTAMP
     WHERE id = ?
-  `, [closePrice, profitLoss, positionId]);
+  `, [closePrice, closePrice, profitLoss, profitLoss, positionId]);
 
   // Update user balance (simplified)
   await executeQuery(`
@@ -319,7 +321,7 @@ router.get('/history', asyncHandler(async (req, res) => {
       p.side,
       p.lot_size,
       p.open_price,
-      p.current_price as close_price,
+  COALESCE(p.close_price, p.current_price) as close_price,
       p.profit,
       p.opened_at,
       p.closed_at
@@ -375,7 +377,8 @@ router.get('/market/:symbol', asyncHandler(async (req, res) => {
 }));
 
 // Error handling for API routes
-router.use((error, req, res, next) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+router.use((error, req, res, _next) => {
   console.error('Trading API Error:', error);
   
   res.status(error.statusCode || 500).json({

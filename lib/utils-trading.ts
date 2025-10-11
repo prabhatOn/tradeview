@@ -1,9 +1,26 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Utility functions to normalize data between frontend and backend
 
 import { Position } from './types';
 
 // Normalize position data from backend to frontend format
 export function normalizePosition(backendPosition: any): Position {
+  const status = backendPosition.status ?? backendPosition.position_status;
+  const openPrice = backendPosition.openPrice ?? backendPosition.open_price ?? 0;
+  const currentPrice =
+    backendPosition.currentPrice ??
+    backendPosition.current_price ??
+    backendPosition.lastPrice ??
+    backendPosition.last_price ??
+    openPrice;
+  const rawClosePrice = backendPosition.closePrice ?? backendPosition.close_price;
+  const resolvedClosePrice =
+    rawClosePrice !== undefined && rawClosePrice !== null && rawClosePrice !== ''
+      ? Number(rawClosePrice)
+      : status === 'closed'
+        ? currentPrice ?? openPrice
+        : null;
+
   return {
     ...backendPosition,
     // Core identification
@@ -22,9 +39,9 @@ export function normalizePosition(backendPosition: any): Position {
     volume: backendPosition.volume ?? backendPosition.lotSize ?? backendPosition.lot_size ?? 0,
     
     // Price fields
-    openPrice: backendPosition.openPrice ?? backendPosition.open_price ?? 0,
-    currentPrice: backendPosition.currentPrice ?? backendPosition.current_price ?? backendPosition.openPrice ?? 0,
-    closePrice: backendPosition.closePrice ?? backendPosition.close_price,
+  openPrice,
+  currentPrice,
+  closePrice: resolvedClosePrice,
     stopLoss: backendPosition.stopLoss ?? backendPosition.stop_loss,
     takeProfit: backendPosition.takeProfit ?? backendPosition.take_profit,
     

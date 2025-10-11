@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ export default function RegisterPage() {
     phone: "",
     password: "",
     confirmPassword: "",
+    referralCode: "",
     acceptTerms: false
   })
   const [showPassword, setShowPassword] = useState(false)
@@ -31,6 +32,7 @@ export default function RegisterPage() {
   
   const { register, isAuthenticated } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { theme, setTheme } = useTheme()
 
   // Redirect if already authenticated
@@ -40,11 +42,21 @@ export default function RegisterPage() {
     }
   }, [isAuthenticated, router])
 
+  useEffect(() => {
+    const queryRef = searchParams.get('ref')
+    if (queryRef && queryRef !== formData.referralCode) {
+      setFormData((prev) => ({
+        ...prev,
+        referralCode: queryRef.toUpperCase(),
+      }))
+    }
+  }, [searchParams, formData.referralCode])
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : name === 'referralCode' ? value.toUpperCase() : value
     }))
   }
 
@@ -79,6 +91,7 @@ export default function RegisterPage() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         phone: formData.phone,
+        referralCode: formData.referralCode || undefined,
         acceptTerms: formData.acceptTerms
       })
       
@@ -86,8 +99,12 @@ export default function RegisterPage() {
       setTimeout(() => {
         router.push("/") // Redirect to dashboard after successful registration
       }, 2000)
-    } catch (err: any) {
-      setError(err.message || "Registration failed. Please try again.")
+    } catch (err) {
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message?: unknown }).message ?? "")
+          : ""
+      setError(message || "Registration failed. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -154,6 +171,12 @@ export default function RegisterPage() {
                 </Alert>
               )}
 
+              {formData.referralCode && (
+                <div className="rounded-md border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm text-green-700">
+                  Referral code applied: <span className="font-semibold">{formData.referralCode}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName" className="text-foreground">First Name</Label>
@@ -194,6 +217,19 @@ export default function RegisterPage() {
                   placeholder="john.doe@example.com"
                   required
                   className="bg-background border-border text-foreground placeholder-muted-foreground"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="referralCode" className="text-foreground">Referral Code (Optional)</Label>
+                <Input
+                  id="referralCode"
+                  name="referralCode"
+                  type="text"
+                  value={formData.referralCode}
+                  onChange={handleInputChange}
+                  placeholder="Enter referral code"
+                  className="bg-background border-border text-foreground placeholder-muted-foreground uppercase"
                 />
               </div>
 

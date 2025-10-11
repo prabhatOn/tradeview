@@ -1,6 +1,9 @@
+/* eslint-disable import/no-commonjs */
+/* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable @typescript-eslint/no-require-imports */
 const express = require('express');
 const Joi = require('joi');
-const { executeQuery, executeTransaction } = require('../config/database');
+const { executeQuery } = require('../config/database');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const Position = require('../models/Position');
 const TradingAccount = require('../models/TradingAccount');
@@ -560,76 +563,21 @@ router.delete('/positions/:positionId', asyncHandler(async (req, res) => {
   const currentPrice = prices[0];
   const closePrice = position.side === 'buy' ? currentPrice.bid : currentPrice.ask;
 
-  // Calculate final profit/loss using FundManager
-  const finalProfit = FundManager.calculatePositionPnL(
-    {
-      open_price: position.openPrice,
-      lot_size: position.lotSize,
-      side: position.side
-    },
-    closePrice,
-    symbolInfo
-  );
+  const closeReason = value.closeReason || 'manual';
 
-  // Calculate additional metrics
-  const netProfit = finalProfit - (position.commission || 0) - (position.swap || 0);
-  const pips = Math.abs((closePrice - position.openPrice) / symbolInfo.pip_size);
-  const pipValue = (position.lotSize * symbolInfo.contract_size * symbolInfo.pip_size);
-  
-  // Close the position and update account balance (realistic trading simulation)
-  await executeQuery(
-    `UPDATE positions 
-     SET status = 'closed', current_price = ?, profit = ?, updated_at = NOW()
-     WHERE id = ?`,
-    [closePrice, finalProfit, positionId]
-  );
-
-  // Update account balance immediately (like real trading)
-  const accountData = await executeQuery(
-    'SELECT balance, equity FROM trading_accounts WHERE id = ?',
+  // Capture balance before closing for notifications
+  const [accountSnapshot] = await executeQuery(
+    'SELECT balance FROM trading_accounts WHERE id = ?',
     [position.accountId]
   );
+  const previousBalance = accountSnapshot ? parseFloat(accountSnapshot.balance) : null;
 
-  if (accountData.length > 0) {
-    const currentBalance = parseFloat(accountData[0].balance);
-    const newBalance = currentBalance + finalProfit;
-    
-    await executeQuery(
-      `UPDATE trading_accounts 
-       SET balance = ?, equity = ?, free_margin = ?, updated_at = NOW()
-       WHERE id = ?`,
-      [newBalance, newBalance, newBalance, position.accountId]
-    );
+  const closeSummary = await position.close(closePrice, closeReason);
 
-    // Record the balance change for audit trail
-    await executeQuery(
-      `INSERT INTO account_balance_history 
-       (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        position.accountId,
-        currentBalance,
-        newBalance,
-        finalProfit,
-        finalProfit >= 0 ? 'trade_profit' : 'trade_loss',
-        positionId,
-        'position_close',
-        `Position closed: ${position.symbol} ${position.side} ${position.lotSize} lots - ${finalProfit >= 0 ? 'Profit' : 'Loss'}: $${Math.abs(finalProfit).toFixed(2)}`
-      ]
-    );
-  }
-
-  const result = {
-    positionId: positionId,
-    symbol: position.symbol,
-    side: position.side,
-    lotSize: position.lotSize,
-    openPrice: position.openPrice,
-    closePrice: closePrice,
-    finalProfit: finalProfit,
-    closeReason: value.closeReason || 'manual',
-    balanceUpdated: true
-  };
+  const finalProfit = closeSummary.finalProfit;
+  const netProfit = finalProfit - (position.commission || 0) - (position.swap || 0);
+  const pips = Math.abs((closePrice - position.openPrice) / symbolInfo.pip_size);
+  const pipValue = position.lotSize * symbolInfo.contract_size * symbolInfo.pip_size;
 
   console.log(`✅ Position ${positionId} closed successfully. P&L: $${finalProfit.toFixed(2)}`);
 
@@ -646,7 +594,7 @@ router.delete('/positions/:positionId', asyncHandler(async (req, res) => {
         userId: req.user.id,
         accountId: position.accountId,
         data: {
-          previousBalance: accountData[0].balance,
+          previousBalance: previousBalance,
           newBalance: updatedAccountData[0].balance,
           change: finalProfit,
           changeType: finalProfit >= 0 ? 'profit' : 'loss',
@@ -665,7 +613,21 @@ router.delete('/positions/:positionId', asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: `Position closed successfully. ${finalProfit >= 0 ? 'Profit' : 'Loss'}: $${Math.abs(finalProfit).toFixed(2)}`,
-    data: result
+    data: {
+      positionId,
+      symbol: position.symbol,
+      side: position.side,
+      lotSize: position.lotSize,
+      openPrice: position.openPrice,
+      closePrice,
+      finalProfit,
+      netProfit,
+      pips,
+      pipValue,
+      closeReason,
+      tradeHistoryId: closeSummary.tradeHistoryId,
+      ibCommission: closeSummary.ibCommission
+    }
   });
 }));
 

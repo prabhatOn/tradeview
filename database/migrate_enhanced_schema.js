@@ -1,5 +1,6 @@
-const mysql = require('mysql2/promise');
-require('dotenv').config({ path: './backend/.env' });
+import mysql from 'mysql2/promise';
+import dotenv from 'dotenv';
+dotenv.config({ path: './backend/.env' });
 
 /**
  * Database Migration Script for Enhanced Forex Trading Platform
@@ -261,6 +262,39 @@ async function runMigration() {
     `);
     console.log('  ✅ Created payment_gateways table');
 
+    console.log('📝 Step 5a: Creating bank accounts table...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS bank_accounts (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        payment_gateway_id INT NULL,
+        label VARCHAR(120) NOT NULL,
+        bank_name VARCHAR(150) NOT NULL,
+        account_name VARCHAR(150) NOT NULL,
+        account_number VARCHAR(120) NOT NULL,
+        account_type ENUM('personal', 'business') DEFAULT 'business',
+        iban VARCHAR(60),
+        swift_code VARCHAR(60),
+        routing_number VARCHAR(60),
+        branch_name VARCHAR(150),
+        branch_address VARCHAR(255),
+        country VARCHAR(100),
+        currency VARCHAR(3) DEFAULT 'USD',
+        instructions TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        sort_order INT DEFAULT 0,
+        current_balance DECIMAL(15,2) DEFAULT 0.00,
+        metadata JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+        FOREIGN KEY (payment_gateway_id) REFERENCES payment_gateways(id) ON DELETE SET NULL,
+        INDEX idx_gateway (payment_gateway_id),
+        INDEX idx_active (is_active),
+        INDEX idx_sort_order (sort_order)
+      )
+    `);
+    console.log('  ✅ Created bank_accounts table');
+
     // Step 7: Enhance transactions table
     console.log('📝 Step 6: Enhancing transactions table...');
     
@@ -314,7 +348,7 @@ async function runMigration() {
         console.log('  ✅ Added processed_by foreign key');
       }
     } catch (error) {
-      console.log('  ⚠️ Foreign key constraints may already exist');
+      console.log('  ⚠️ Foreign key constraints may already exist:', error?.message || error);
     }
 
     // Step 8: Create admin management tables

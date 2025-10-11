@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const { executeQuery, executeTransaction } = require('../config/database');
-const TradingAccount = require('../models/TradingAccount');
 
 class FundManager {
   
@@ -51,11 +52,18 @@ class FundManager {
    * @param {string} changeType - Type of balance change
    * @returns {Object} Updated account balance info
    */
-  static async updateAccountBalance(accountId, profit, positionId, changeType = 'trade_profit') {
+  static async updateAccountBalance(accountId, profit, positionId, options = {}) {
+    const {
+      performedByType = 'system',
+      performedById = null,
+      metadata = {},
+      notes
+    } = options;
+
     return executeTransaction(async (connection) => {
       // Get current account balance
       const [accountRows] = await connection.execute(
-        'SELECT balance, equity, free_margin FROM trading_accounts WHERE id = ?',
+        'SELECT user_id, balance, equity, free_margin FROM trading_accounts WHERE id = ?',
         [accountId]
       );
       
@@ -63,6 +71,7 @@ class FundManager {
         throw new Error('Trading account not found');
       }
       
+      const accountOwnerId = accountRows[0].user_id;
       const currentBalance = parseFloat(accountRows[0].balance);
       const newBalance = currentBalance + profit;
       
@@ -77,17 +86,21 @@ class FundManager {
       // Record balance history
       await connection.execute(
         `INSERT INTO account_balance_history 
-         (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (account_id, previous_balance, new_balance, change_amount, change_type, change_context, reference_id, reference_type, performed_by_type, performed_by_id, metadata, notes) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           accountId,
           currentBalance,
           newBalance,
           profit,
           profit >= 0 ? 'trade_profit' : 'trade_loss',
+          'trade',
           positionId,
           'position',
-          `Position ${profit >= 0 ? 'profit' : 'loss'}: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`
+          performedByType,
+          performedById,
+          JSON.stringify({ ...metadata, positionId }),
+          notes || `Position ${profit >= 0 ? 'profit' : 'loss'}: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`
         ]
       );
       
@@ -181,7 +194,13 @@ class FundManager {
    * @param {string} transactionId - External transaction ID
    * @returns {Object} Transaction result
    */
-  static async processDeposit(accountId, amount, method = 'bank_transfer', transactionId = null) {
+  static async processDeposit(accountId, amount, method = 'bank_transfer', transactionId = null, options = {}) {
+    const {
+      performedByType = 'system',
+      performedById = null,
+      metadata = {}
+    } = options;
+
     return executeTransaction(async (connection) => {
       // Get current balance
       const [accountRows] = await connection.execute(
@@ -207,16 +226,20 @@ class FundManager {
       // Record balance history
       await connection.execute(
         `INSERT INTO account_balance_history 
-         (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (account_id, previous_balance, new_balance, change_amount, change_type, change_context, reference_id, reference_type, performed_by_type, performed_by_id, metadata, notes) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           accountId,
           currentBalance,
           newBalance,
           amount,
           'deposit',
+          'deposit',
           transactionId,
           'deposit_transaction',
+          performedByType,
+          performedById,
+          JSON.stringify({ ...metadata, method, transactionId }),
           `Deposit via ${method}: +$${amount.toFixed(2)}`
         ]
       );
@@ -240,7 +263,13 @@ class FundManager {
    * @param {string} transactionId - External transaction ID
    * @returns {Object} Transaction result
    */
-  static async processWithdrawal(accountId, amount, method = 'bank_transfer', transactionId = null) {
+  static async processWithdrawal(accountId, amount, method = 'bank_transfer', transactionId = null, options = {}) {
+    const {
+      performedByType = 'system',
+      performedById = null,
+      metadata = {}
+    } = options;
+
     return executeTransaction(async (connection) => {
       // Get current balance
       const [accountRows] = await connection.execute(
@@ -272,16 +301,20 @@ class FundManager {
       // Record balance history
       await connection.execute(
         `INSERT INTO account_balance_history 
-         (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (account_id, previous_balance, new_balance, change_amount, change_type, change_context, reference_id, reference_type, performed_by_type, performed_by_id, metadata, notes) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           accountId,
           currentBalance,
           newBalance,
           -amount,
           'withdrawal',
+          'withdrawal',
           transactionId,
           'withdrawal_transaction',
+          performedByType,
+          performedById,
+          JSON.stringify({ ...metadata, method, transactionId }),
           `Withdrawal via ${method}: -$${amount.toFixed(2)}`
         ]
       );
@@ -293,6 +326,84 @@ class FundManager {
         withdrawalAmount: amount,
         method: method,
         transactionId: transactionId
+      };
+    });
+  }
+
+  /**
+   * Apply a manual adjustment (credit or debit) initiated by admin/system
+   * @param {number} accountId
+   * @param {number} amount Positive amount to adjust
+   * @param {'credit'|'debit'} type
+   * @param {Object} options
+   * @returns {Promise<Object>}
+   */
+  static async applyManualAdjustment(accountId, amount, type = 'credit', options = {}) {
+    const {
+      performedById = null,
+      reasonCode = 'adjustment',
+      notes = '',
+      metadata = {}
+    } = options;
+
+    const signedAmount = type === 'credit' ? Math.abs(amount) : -Math.abs(amount);
+
+    return executeTransaction(async (connection) => {
+      const [accountRows] = await connection.execute(
+        'SELECT user_id, balance, equity, free_margin FROM trading_accounts WHERE id = ?',
+        [accountId]
+      );
+
+      if (accountRows.length === 0) {
+        throw new Error('Trading account not found');
+      }
+
+      const accountOwnerId = accountRows[0].user_id;
+      const currentBalance = parseFloat(accountRows[0].balance);
+      const newBalance = currentBalance + signedAmount;
+
+      if (newBalance < 0) {
+        throw new Error('Manual adjustment would result in negative balance');
+      }
+
+      await connection.execute(
+        `UPDATE trading_accounts 
+         SET balance = ?, equity = ?, free_margin = ?, updated_at = NOW() 
+         WHERE id = ?`,
+        [newBalance, newBalance, newBalance, accountId]
+      );
+
+      const changeType = type === 'credit' ? 'manual_credit' : 'manual_debit';
+
+      await connection.execute(
+        `INSERT INTO account_balance_history 
+         (account_id, previous_balance, new_balance, change_amount, change_type, change_context, reference_id, reference_type, performed_by_type, performed_by_id, metadata, notes) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          accountId,
+          currentBalance,
+          newBalance,
+          signedAmount,
+          changeType,
+          'adjustment',
+          null,
+          'manual_adjustment',
+          'admin',
+          performedById,
+          JSON.stringify({ ...metadata, reasonCode }),
+          notes || `Manual ${type === 'credit' ? 'credit' : 'debit'} (${reasonCode})`
+        ]
+      );
+
+      return {
+        success: true,
+        accountId,
+        userId: accountOwnerId,
+        previousBalance: currentBalance,
+        newBalance,
+        change: signedAmount,
+        changeType,
+        reasonCode
       };
     });
   }
@@ -318,12 +429,24 @@ class FundManager {
     
     const rows = await executeQuery(query, [accountId]);
     
-    return rows.map(row => ({
-      ...row,
-      change_amount: parseFloat(row.change_amount),
-      previous_balance: parseFloat(row.previous_balance),
-      new_balance: parseFloat(row.new_balance)
-    }));
+    return rows.map(row => {
+      let parsedMetadata = null;
+      if (row.metadata) {
+        try {
+          parsedMetadata = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+        } catch {
+          parsedMetadata = row.metadata;
+        }
+      }
+
+      return {
+        ...row,
+        change_amount: parseFloat(row.change_amount),
+        previous_balance: parseFloat(row.previous_balance),
+        new_balance: parseFloat(row.new_balance),
+        metadata: parsedMetadata
+      };
+    });
   }
 
   /**
@@ -336,7 +459,7 @@ class FundManager {
     const [depositResult] = await executeQuery(
       `SELECT COALESCE(SUM(change_amount), 0) as total_deposits 
        FROM account_balance_history 
-       WHERE account_id = ? AND change_type = 'deposit'`,
+       WHERE account_id = ? AND change_type IN ('deposit', 'manual_credit', 'bonus')`,
       [accountId]
     );
     
@@ -344,7 +467,7 @@ class FundManager {
     const [withdrawalResult] = await executeQuery(
       `SELECT COALESCE(SUM(ABS(change_amount)), 0) as total_withdrawals 
        FROM account_balance_history 
-       WHERE account_id = ? AND change_type = 'withdrawal'`,
+       WHERE account_id = ? AND change_type IN ('withdrawal', 'manual_debit')`,
       [accountId]
     );
     

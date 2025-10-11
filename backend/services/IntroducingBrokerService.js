@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const { executeQuery, executeTransaction } = require('../config/database');
 const IntroducingBroker = require('../models/IntroducingBroker');
 const User = require('../models/User');
@@ -187,35 +189,65 @@ class IntroducingBrokerService {
   static async getIbClientsWithPerformance(ibUserId) {
     const clients = await executeQuery(`
       SELECT
-        ib.*,
+        ib.id,
+        ib.client_user_id,
+        ib.commission_rate,
+        ib.status,
+        ib.tier_level,
+        ib.total_commission_earned,
+        ib.total_client_volume,
         u.first_name,
         u.last_name,
         u.email,
-        u.created_at as client_joined,
-        COALESCE(SUM(th.volume), 0) as total_volume,
-        COALESCE(SUM(ic.commission_amount), 0) as total_commissions,
-        COUNT(DISTINCT th.id) as total_trades,
-        COUNT(DISTINCT CASE WHEN th.profit > 0 THEN th.id END) as winning_trades
+        u.created_at AS client_joined,
+        COALESCE(SUM(th.lot_size), 0) AS total_volume_lots,
+        COALESCE(SUM(ic.commission_amount), 0) AS total_commissions,
+        COUNT(DISTINCT th.id) AS total_trades,
+        COUNT(DISTINCT CASE WHEN COALESCE(th.profit, 0) > 0 THEN th.id END) AS winning_trades,
+        MAX(th.closed_at) AS last_trade_at
       FROM introducing_brokers ib
       JOIN users u ON ib.client_user_id = u.id
-      LEFT JOIN ib_commissions ic ON ib.id = ic.ib_relationship_id
-      LEFT JOIN trade_history th ON ic.trade_id = th.id
+      LEFT JOIN trading_accounts ta ON ta.user_id = ib.client_user_id
+      LEFT JOIN trade_history th ON th.account_id = ta.id
+      LEFT JOIN ib_commissions ic ON ic.trade_id = th.id AND ic.ib_relationship_id = ib.id
       WHERE ib.ib_user_id = ?
-      GROUP BY ib.id, u.id
-      ORDER BY ib.total_commission_earned DESC
+      GROUP BY ib.id, u.id, ib.commission_rate, ib.status, ib.tier_level, ib.total_commission_earned, ib.total_client_volume, u.first_name, u.last_name, u.email, u.created_at
+      ORDER BY total_commissions DESC, total_volume_lots DESC, u.first_name ASC
     `, [ibUserId]);
 
     return clients.map(client => ({
       id: client.id,
+      clientUserId: Number(client.client_user_id),
       clientName: `${client.first_name} ${client.last_name}`,
       clientEmail: client.email,
       clientJoined: new Date(client.client_joined).toLocaleDateString(),
-      volume: parseFloat(client.total_volume),
-      commission: parseFloat(client.total_commissions),
+      volume: (() => {
+        const computedVolume = parseFloat(client.total_volume_lots ?? 0);
+        if (computedVolume > 0) return computedVolume;
+        const storedVolume = parseFloat(client.total_client_volume ?? 0);
+        return Number.isFinite(storedVolume) ? storedVolume : 0;
+      })(),
+      commission: (() => {
+        const computedCommission = parseFloat(client.total_commissions ?? 0);
+        if (computedCommission > 0) return computedCommission;
+        const storedCommission = parseFloat(client.total_commission_earned ?? 0);
+        return Number.isFinite(storedCommission) ? storedCommission : 0;
+      })(),
+      commissionRate: client.commission_rate !== undefined && client.commission_rate !== null
+        ? Number(client.commission_rate)
+        : null,
       commissionTier: (client.tier_level || 'bronze').charAt(0).toUpperCase() + (client.tier_level || 'bronze').slice(1),
       status: client.status,
-      totalTrades: parseInt(client.total_trades),
-      winRate: client.total_trades > 0 ? Math.round((client.winning_trades / client.total_trades) * 100) : 0
+      totalTrades: Number(client.total_trades) || 0,
+      winRate: (() => {
+        const trades = Number(client.total_trades) || 0;
+        if (trades > 0) {
+          const wins = Number(client.winning_trades) || 0;
+          return Math.round((wins / trades) * 100);
+        }
+        return 0;
+      })(),
+      lastTradeAt: client.last_trade_at ? new Date(client.last_trade_at).toISOString() : null
     }));
   }
 }

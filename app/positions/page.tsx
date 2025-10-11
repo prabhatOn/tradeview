@@ -38,10 +38,8 @@ import {
 import { 
   BarChart3, 
   TrendingUp, 
-  TrendingDown, 
   DollarSign, 
   Target, 
-  Shield, 
   Clock,
   X,
   Edit,
@@ -603,6 +601,7 @@ export default function PositionsPage() {
                                 ? `${Math.floor(duration / (1000 * 60))}m`
                                 : '-'
                               const pnl = position.profit ?? 0
+                              const closePriceValue = position.closePrice ?? position.currentPrice ?? null
                               
                               return (
                                 <TableRow key={position.id} className="hover:bg-muted/50">
@@ -629,7 +628,9 @@ export default function PositionsPage() {
                                   <TableCell className="font-mono text-sm">{position.volume || position.lotSize}</TableCell>
                                   <TableCell className="font-mono text-sm">{formatPrice(position.openPrice)}</TableCell>
                                   <TableCell className="font-mono text-sm">
-                                    {position.closePrice ? formatPrice(position.closePrice) : '-'}
+                                    {closePriceValue !== null && closePriceValue !== undefined
+                                      ? formatPrice(closePriceValue)
+                                      : '-'}
                                   </TableCell>
                                   <TableCell className="font-mono text-sm text-muted-foreground">
                                     {durationText}

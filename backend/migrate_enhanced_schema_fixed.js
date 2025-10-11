@@ -1,5 +1,7 @@
-const mysql = require('mysql2/promise');
-require('dotenv').config();
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import mysql from 'mysql2/promise';
+import dotenv from 'dotenv';
+dotenv.config();
 
 /**
  * Enhanced Database Migration Script - Fixed for existing schema
@@ -51,9 +53,13 @@ async function runMigration() {
       { name: 'reference_number', definition: 'VARCHAR(100)' },
       { name: 'external_transaction_id', definition: 'VARCHAR(200)' },
       { name: 'admin_notes', definition: 'TEXT' },
+      { name: 'user_notes', definition: 'TEXT' },
+      { name: 'reviewed_by', definition: 'INT' },
+      { name: 'reviewed_at', definition: 'TIMESTAMP NULL' },
+      { name: 'review_notes', definition: 'TEXT' },
       { name: 'processed_by', definition: 'INT' },
       { name: 'processed_at', definition: 'TIMESTAMP NULL' },
-      { name: 'batch_id', definition: 'INT' },
+      { name: 'batch_reference', definition: 'VARCHAR(100)' },
       { name: 'priority', definition: 'ENUM("low", "normal", "high", "urgent") DEFAULT "normal"' },
       { name: 'notification_sent', definition: 'BOOLEAN DEFAULT FALSE' }
     ];
@@ -89,9 +95,13 @@ async function runMigration() {
       { name: 'reference_number', definition: 'VARCHAR(100)' },
       { name: 'external_transaction_id', definition: 'VARCHAR(200)' },
       { name: 'admin_notes', definition: 'TEXT' },
+      { name: 'user_notes', definition: 'TEXT' },
+      { name: 'reviewed_by', definition: 'INT' },
+      { name: 'reviewed_at', definition: 'TIMESTAMP NULL' },
+      { name: 'review_notes', definition: 'TEXT' },
       { name: 'processed_by', definition: 'INT' },
       { name: 'processed_at', definition: 'TIMESTAMP NULL' },
-      { name: 'batch_id', definition: 'INT' },
+      { name: 'batch_reference', definition: 'VARCHAR(100)' },
       { name: 'priority', definition: 'ENUM("low", "normal", "high", "urgent") DEFAULT "normal"' },
       { name: 'notification_sent', definition: 'BOOLEAN DEFAULT FALSE' }
     ];
@@ -136,6 +146,17 @@ async function runMigration() {
     }
 
     try {
+      await connection.execute(`
+        ALTER TABLE deposits 
+        ADD CONSTRAINT fk_deposits_reviewed_by 
+        FOREIGN KEY (reviewed_by) REFERENCES users(id)
+      `);
+      console.log('  ✅ Added reviewed_by foreign key to deposits');
+    } catch (error) {
+      console.log('  ⏭️ Deposits reviewed_by foreign key may already exist');
+    }
+
+    try {
       // For withdrawals table
       await connection.execute(`
         ALTER TABLE withdrawals 
@@ -158,8 +179,72 @@ async function runMigration() {
       console.log('  ⏭️ Withdrawals processed_by foreign key may already exist');
     }
 
-    // Step 4: Create admin actions table if not exists
-    console.log('📝 Step 4: Creating admin management system...');
+    try {
+      await connection.execute(`
+        ALTER TABLE withdrawals 
+        ADD CONSTRAINT fk_withdrawals_reviewed_by 
+        FOREIGN KEY (reviewed_by) REFERENCES users(id)
+      `);
+      console.log('  ✅ Added reviewed_by foreign key to withdrawals');
+    } catch (error) {
+      console.log('  ⏭️ Withdrawals reviewed_by foreign key may already exist');
+    }
+
+    // Step 4: Enhance account balance history for audit tracking
+    console.log('📝 Step 4: Enhancing account balance history...');
+
+    const [abhColumns] = await connection.execute(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'account_balance_history'
+    `, [process.env.DB_NAME || 'pro2']);
+
+    const existingAbhColumns = abhColumns.map(row => row.COLUMN_NAME);
+    const abhColumnsToAdd = [
+      { name: 'change_context', definition: "ENUM('deposit','withdrawal','trade','adjustment','bonus','correction','system') DEFAULT 'trade'" },
+      { name: 'performed_by_type', definition: "ENUM('user','admin','system') DEFAULT 'user'" },
+      { name: 'performed_by_id', definition: 'INT' },
+      { name: 'metadata', definition: 'JSON' }
+    ];
+
+    for (const column of abhColumnsToAdd) {
+      if (!existingAbhColumns.includes(column.name)) {
+        try {
+          await connection.execute(`ALTER TABLE account_balance_history ADD COLUMN ${column.name} ${column.definition}`);
+          console.log(`  ✅ Added column to account_balance_history: ${column.name}`);
+        } catch (error) {
+          console.log(`  ⚠️ Could not add column ${column.name}: ${error.message}`);
+        }
+      } else {
+        console.log(`  ⏭️ Column already exists in account_balance_history: ${column.name}`);
+      }
+    }
+
+    if (!existingAbhColumns.includes('performed_by_id')) {
+      try {
+        await connection.execute(`
+          ALTER TABLE account_balance_history 
+          ADD INDEX idx_performed_by_id (performed_by_id)
+        `);
+        console.log('  ✅ Added index on performed_by_id');
+      } catch (error) {
+        console.log('  ⏭️ Index on performed_by_id may already exist');
+      }
+
+      try {
+        await connection.execute(`
+          ALTER TABLE account_balance_history 
+          ADD CONSTRAINT fk_account_balance_performed_by 
+          FOREIGN KEY (performed_by_id) REFERENCES users(id) ON DELETE SET NULL
+        `);
+        console.log('  ✅ Added performed_by foreign key to account_balance_history');
+      } catch (error) {
+        console.log('  ⏭️ Account balance history foreign key may already exist');
+      }
+    }
+
+    // Step 5: Create admin actions table if not exists
+    console.log('📝 Step 5: Creating admin management system...');
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS admin_actions (
         id INT PRIMARY KEY AUTO_INCREMENT,

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // API Configuration and Types
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 export const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3002';
@@ -87,6 +88,14 @@ export interface AdminUserSummary {
   email_verified?: boolean | number | null;
   kycStatus?: 'pending' | 'submitted' | 'approved' | 'rejected' | null;
   kyc_status?: 'pending' | 'submitted' | 'approved' | 'rejected' | null;
+  hasIb?: boolean | number | null;
+  has_ib?: boolean | number | null;
+  ibApplicationStatus?: string | null;
+  ib_application_status?: string | null;
+  ibApplicationUpdatedAt?: string | null;
+  ib_application_updated_at?: string | null;
+  ibApplicationCreatedAt?: string | null;
+  ib_application_created_at?: string | null;
 }
 
 export interface AdminUsersResponse {
@@ -125,6 +134,13 @@ export interface AdminUserDetailUser {
   roles?: string[] | string | null;
   primary_role?: string | null;
   has_ib?: number | boolean | null;
+  hasIb?: boolean | number | null;
+  ib_application_status?: string | null;
+  ibApplicationStatus?: string | null;
+  ib_application_updated_at?: string | null;
+  ibApplicationUpdatedAt?: string | null;
+  ib_application_created_at?: string | null;
+  ibApplicationCreatedAt?: string | null;
 }
 
 export interface AdminUserAccountSummary {
@@ -202,6 +218,353 @@ export interface AdminDashboardStats {
     pending_tickets: number;
     new_tickets_7d: number;
   };
+  systemHealth?: AdminDashboardSystemHealth;
+  highlights?: AdminDashboardHighlights;
+  alerts?: AdminDashboardAlert[];
+  recentActivity?: AdminDashboardActivityItem[];
+}
+
+export type AdminDashboardAlertType = 'info' | 'warning' | 'critical' | 'success';
+
+export interface AdminDashboardAlert {
+  type: AdminDashboardAlertType;
+  title: string;
+  description?: string;
+  value?: number;
+  timestamp: string;
+}
+
+export interface AdminDashboardSystemHealth {
+  serverStatus: string;
+  databaseStatus: string;
+  apiLatencyMs?: number;
+  activeUsers: number;
+  activeAccounts: number;
+  openPositions: number;
+  pendingTransactions: number;
+  openSupportTickets: number;
+  generatedAt: string;
+  pendingDeposits?: number;
+  pendingWithdrawals?: number;
+  pendingIbApplications?: number;
+  pendingUserVerifications?: number;
+}
+
+export interface AdminDashboardHighlights {
+  timeframe: string;
+  newRegistrations: number;
+  completedTrades: number;
+  withdrawalsProcessed: number;
+  depositsProcessed: number;
+}
+
+export interface AdminDashboardActivityItem {
+  type: string;
+  action: string;
+  subject: string;
+  status: 'success' | 'warning' | 'info' | 'critical';
+  metadata?: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface AdminFundsSummary {
+  pendingDeposits: number;
+  pendingWithdrawals: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  totalBalances: number;
+  totalUsers: number;
+}
+
+export interface AdminFundsActivityItem {
+  id: number;
+  type: 'deposit' | 'withdrawal';
+  transaction_id: string;
+  email: string;
+  account_number: string;
+  amount: number | string;
+  net_amount: number | string;
+  status: string;
+  created_at: string;
+}
+
+export interface AdminFundsOverview {
+  summary: AdminFundsSummary;
+  recentActivity: AdminFundsActivityItem[];
+}
+
+export type AdminFundsTransactionStatus =
+  | 'pending'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled'
+  | 'failed'
+  | string;
+
+export interface AdminFundsTransactionRow {
+  id: number;
+  transaction_id: string;
+  amount: number | string;
+  fee: number | string;
+  net_amount: number | string;
+  status: AdminFundsTransactionStatus;
+  payment_reference?: string | null;
+  user_notes?: string | null;
+  admin_notes?: string | null;
+  review_notes?: string | null;
+  created_at: string;
+  processed_at?: string | null;
+  reviewed_at?: string | null;
+  processed_by?: number | null;
+  reviewed_by?: number | null;
+  batch_reference?: string | null;
+  payment_method_name?: string | null;
+  payment_method_type?: string | null;
+  email: string;
+  user_name?: string | null;
+  account_number: string;
+}
+
+export interface AdminFundsTransactionsResponse {
+  rows: AdminFundsTransactionRow[];
+  pagination: PaginationInfo;
+}
+
+export interface AdminFundsChartPoint {
+  activityDate: string;
+  totalDeposits: number | string;
+  totalWithdrawals: number | string;
+}
+
+export interface AdminTradingOverview {
+  openPositions: number;
+  openPnL: number;
+  openVolume: number;
+  closedPositions: number;
+  closedPnL: number;
+  closedVolume: number;
+  totalVolume: number;
+  totalCommission: number;
+  totalSwap: number;
+  netPnL: number;
+}
+
+export interface AdminTradingPosition {
+  id: number;
+  userId: number;
+  userEmail: string;
+  userName: string;
+  user?: {
+    id: number;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+  };
+  accountId: number;
+  accountNumber: string;
+  symbolId: number;
+  symbol: string;
+  symbolName: string;
+  side: 'buy' | 'sell';
+  lotSize: number;
+  openPrice: number;
+  currentPrice: number | null;
+  closePrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  commission: number;
+  swap: number;
+  profit: number;
+  netProfit: number;
+  unrealizedPnl: number;
+  grossProfit: number;
+  grossLoss: number;
+  status: 'open' | 'closed' | 'pending';
+  comment?: string | null;
+  openedAt: string;
+  updatedAt?: string | null;
+  closedAt?: string | null;
+  closeReason?: string | null;
+}
+
+export interface AdminTradingPositionsResponse {
+  rows: AdminTradingPosition[];
+  pagination: PaginationInfo;
+  summary: {
+    totalVolume: number;
+    totalProfit: number;
+    totalCommission: number;
+    netProfit: number;
+  };
+}
+
+export interface AdminTradingHistoryItem {
+  id: number;
+  userId: number;
+  userEmail: string;
+  userName: string;
+  accountId: number;
+  accountNumber: string;
+  symbolId: number;
+  symbol: string;
+  symbolName: string;
+  side: 'buy' | 'sell';
+  lotSize: number;
+  openPrice: number;
+  closePrice: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  commission: number;
+  swap: number;
+  profit: number;
+  netProfit: number;
+  closeReason: string | null;
+  openedAt: string;
+  closedAt: string;
+  durationMinutes: number | null;
+}
+
+export interface AdminTradingHistoryResponse {
+  rows: AdminTradingHistoryItem[];
+  pagination: PaginationInfo;
+  summary: {
+    totalVolume: number;
+    totalProfit: number;
+    totalCommission: number;
+    totalSwap: number;
+    netProfit: number;
+  };
+}
+
+export interface AdminTradingAccount {
+  id: number;
+  userId: number;
+  userEmail: string;
+  userName: string;
+  accountNumber: string;
+  accountType: string;
+  status: string;
+  currency: string;
+  leverage: number;
+  balance: number;
+  equity: number;
+  freeMargin: number;
+  marginLevel: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminTradingAccountsResponse {
+  rows: AdminTradingAccount[];
+  pagination: PaginationInfo;
+}
+
+// Payment Gateway & Funding Types
+export interface PaymentGateway {
+  id: number;
+  name: string;
+  displayName?: string;
+  display_name?: string;
+  type: 'bank_transfer' | 'credit_card' | 'debit_card' | 'crypto' | 'e_wallet' | 'wire_transfer' | string;
+  provider?: string | null;
+  isActive?: boolean | number;
+  is_active?: boolean | number;
+  minAmount?: number | string;
+  min_amount?: number | string;
+  maxAmount?: number | string;
+  max_amount?: number | string;
+  processingFeeType?: 'fixed' | 'percentage' | string;
+  processing_fee_type?: 'fixed' | 'percentage' | string;
+  processingFeeValue?: number | string;
+  processing_fee_value?: number | string;
+  processingTimeHours?: number | string;
+  processing_time_hours?: number | string;
+  supportedCurrencies?: string[];
+  supported_currencies?: string;
+  description?: string | null;
+  iconUrl?: string | null;
+  icon_url?: string | null;
+  configuration?: Record<string, any> | string;
+  sortOrder?: number | string;
+  sort_order?: number | string;
+  total_deposits?: number | string;
+  total_withdrawals?: number | string;
+  total_deposit_volume?: number | string;
+  total_withdrawal_volume?: number | string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BankAccount {
+  id: number;
+  paymentGatewayId?: number | null;
+  payment_gateway_id?: number | null;
+  label: string;
+  bankName: string;
+  bank_name?: string;
+  accountName: string;
+  account_name?: string;
+  accountNumber: string;
+  account_number?: string;
+  accountType?: 'personal' | 'business' | string | null;
+  account_type?: 'personal' | 'business' | string | null;
+  iban?: string | null;
+  swiftCode?: string | null;
+  swift_code?: string | null;
+  routingNumber?: string | null;
+  routing_number?: string | null;
+  branchName?: string | null;
+  branch_name?: string | null;
+  branchAddress?: string | null;
+  branch_address?: string | null;
+  country?: string | null;
+  currency: string;
+  instructions?: string | null;
+  currentBalance?: number | string;
+  current_balance?: number | string;
+  metadata?: Record<string, any> | string;
+  isActive?: boolean | number;
+  is_active?: boolean | number;
+  sortOrder?: number | string;
+  sort_order?: number | string;
+  gatewayDisplayName?: string | null;
+  gateway_display_name?: string | null;
+  gatewayType?: string | null;
+  gateway_type?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FundingMethod {
+  id: number;
+  type: string;
+  name: string;
+  provider?: string | null;
+  depositLimits: { min: number; max: number };
+  withdrawalLimits: { min: number; max: number };
+  processingTime: string;
+  processingTimeHours?: number | null;
+  fees: { deposit: string | number; withdrawal: string | number };
+  supportedCurrencies: string[];
+  configuration?: Record<string, any>;
+  description?: string | null;
+  iconUrl?: string | null;
+  available: boolean;
+}
+
+export interface FundingMethodsPayload {
+  methods: FundingMethod[];
+  bankAccounts: BankAccount[];
+}
+
+export interface AdminTradingSymbol {
+  id: number;
+  symbol: string;
+  name: string;
+}
+
+export interface AdminTradingSymbolsResponse {
+  rows: AdminTradingSymbol[];
 }
 
 export interface AuthTokens {
@@ -221,6 +584,7 @@ export interface RegisterData {
   firstName: string;
   lastName: string;
   phone?: string;
+  referralCode?: string;
   acceptTerms: boolean;
 }
 
@@ -386,8 +750,32 @@ export interface PriceAlert {
 }
 
 // WebSocket Types
+export interface IbCommissionMessageData {
+  commissionId: number;
+  tradeId: number;
+  positionId: number;
+  clientUserId: number;
+  commissionAmount: number;
+  commissionRate: number;
+  tradeVolume: number;
+  profit: number;
+  symbol: string;
+  side: 'buy' | 'sell';
+  lotSize: number;
+  closedAt: string;
+}
+
 export interface WebSocketMessage {
-  type: 'market_update' | 'positions_update' | 'notification' | 'price_alert' | 'error' | 'balance_update';
+  type:
+    | 'market_update'
+    | 'positions_update'
+  | 'realtime_positions_update'
+    | 'notification'
+    | 'price_alert'
+    | 'error'
+    | 'balance_update'
+  | 'ib_commission_recorded'
+  | 'market_prices_update';
   data?: unknown;
   timestamp: string;
   userId?: number;
