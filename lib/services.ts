@@ -33,9 +33,15 @@ import {
   AdminTradingHistoryResponse,
   AdminTradingAccountsResponse,
   AdminTradingPosition,
+  AdminTradingChargesResponseData,
+  AdminTradingBrokerageRates,
+  AdminTradingLeverageSettings,
+  AdminSymbolChargeRow,
+  AdminUpdateSymbolChargePayload,
+  AdminBrokerageUpdatePayload,
+  AdminLeverageUpdatePayload,
   PaymentGateway,
   BankAccount,
-  FundingMethod,
   FundingMethodsPayload
 } from './types';
 
@@ -357,6 +363,18 @@ export const adminService = {
 
   getTradingOverview: (): Promise<ApiResponse<AdminTradingOverview>> =>
   apiClient.get('/admin/trading/overview'),
+
+  getTradingCharges: (): Promise<ApiResponse<AdminTradingChargesResponseData>> =>
+    apiClient.get('/admin/trading/charges'),
+
+  updateTradingSymbolCharges: (symbolId: number, payload: AdminUpdateSymbolChargePayload): Promise<ApiResponse<AdminSymbolChargeRow>> =>
+    apiClient.patch(`/admin/trading/charges/symbols/${symbolId}`, payload),
+
+  updateTradingBrokerageRates: (payload: AdminBrokerageUpdatePayload): Promise<ApiResponse<AdminTradingBrokerageRates>> =>
+    apiClient.put('/admin/trading/charges/brokerage', payload),
+
+  updateTradingLeverageSettings: (payload: AdminLeverageUpdatePayload): Promise<ApiResponse<AdminTradingLeverageSettings>> =>
+    apiClient.patch('/admin/trading/charges/leverage', payload),
 
   getTradingPositions: (params: {
     status?: 'open' | 'closed' | 'all';

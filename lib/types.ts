@@ -336,6 +336,69 @@ export interface AdminFundsChartPoint {
   totalWithdrawals: number | string;
 }
 
+export interface AdminSymbolChargeRow {
+  id: number;
+  symbol: string;
+  name: string;
+  commissionPerLot: number;
+  swapLong: number;
+  swapShort: number;
+  spreadMarkup: number;
+  contractSize: number;
+  pipSize: number;
+  marginRequirement: number;
+  status: string;
+}
+
+export interface AdminTradingBrokerageTier {
+  commission: number;
+  spreadMarkup: number;
+  unit?: string;
+}
+
+export interface AdminTradingBrokerageRates {
+  standard: AdminTradingBrokerageTier;
+  vip: AdminTradingBrokerageTier;
+}
+
+export interface AdminTradingLeverageSettings {
+  defaultLeverage: number;
+  maxLeverage: number;
+}
+
+export interface AdminTradingChargesResponseData {
+  symbols: AdminSymbolChargeRow[];
+  brokerage: AdminTradingBrokerageRates;
+  leverage: AdminTradingLeverageSettings;
+}
+
+export interface AdminUpdateSymbolChargePayload {
+  commissionPerLot?: number;
+  swapLong?: number;
+  swapShort?: number;
+  spreadMarkup?: number;
+  marginRequirement?: number;
+  status?: 'active' | 'inactive';
+}
+
+export interface AdminBrokerageUpdateTierPayload {
+  commission: number;
+  spreadMarkup: number;
+  commissionUnit?: 'per_lot' | 'percentage' | 'fixed';
+  spreadUnit?: 'pips' | 'per_lot' | 'fixed' | 'percentage';
+}
+
+export interface AdminBrokerageUpdatePayload {
+  accountType?: string;
+  standard?: AdminBrokerageUpdateTierPayload;
+  vip?: AdminBrokerageUpdateTierPayload;
+}
+
+export interface AdminLeverageUpdatePayload {
+  defaultLeverage?: number;
+  maxLeverage?: number;
+}
+
 export interface AdminTradingOverview {
   openPositions: number;
   openPnL: number;

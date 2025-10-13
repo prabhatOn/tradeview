@@ -9,6 +9,7 @@ const User = require('../models/User');
 const Position = require('../models/Position');
 const TradingAccount = require('../models/TradingAccount');
 const FundManager = require('../services/FundManager');
+const ChargeService = require('../services/ChargeService');
 
 const createUserSchema = Joi.object({
   email: Joi.string().email().required(),
@@ -2081,6 +2082,194 @@ router.get('/trading/accounts', asyncHandler(async (req, res) => {
         pages: totalResult.length ? Math.ceil(parseInt(totalResult[0].count, 10) / limit) : 1
       }
     }
+  });
+}));
+
+// Trading charges overview
+router.get('/trading/charges', asyncHandler(async (req, res) => {
+  const [symbolCharges, brokerageRates, leverageSettings] = await Promise.all([
+    ChargeService.listSymbolCharges(),
+    ChargeService.getBrokerageRates(),
+    executeQuery(
+      `SELECT setting_key, setting_value
+       FROM system_settings
+       WHERE setting_key IN ('default_leverage', 'max_leverage')`
+    )
+  ]);
+
+  const leverage = {
+    defaultLeverage: 0,
+    maxLeverage: 0
+  };
+
+  leverageSettings.forEach((row) => {
+    const numericValue = Number(row.setting_value);
+    if (row.setting_key === 'default_leverage') {
+      leverage.defaultLeverage = Number.isFinite(numericValue) ? numericValue : 0;
+    }
+    if (row.setting_key === 'max_leverage') {
+      leverage.maxLeverage = Number.isFinite(numericValue) ? numericValue : 0;
+    }
+  });
+
+  res.json({
+    success: true,
+    data: {
+      symbols: symbolCharges,
+      brokerage: brokerageRates,
+      leverage
+    }
+  });
+}));
+
+const symbolChargeSchema = Joi.object({
+  commissionPerLot: Joi.number().optional(),
+  swapLong: Joi.number().optional(),
+  swapShort: Joi.number().optional(),
+  spreadMarkup: Joi.number().optional(),
+  marginRequirement: Joi.number().optional(),
+  status: Joi.string().valid('active', 'inactive').optional()
+}).min(1);
+
+router.patch('/trading/charges/symbols/:symbolId', asyncHandler(async (req, res) => {
+  const symbolId = Number.parseInt(req.params.symbolId, 10);
+  if (Number.isNaN(symbolId)) {
+    throw new AppError('Invalid symbol id', 400);
+  }
+
+  const { error, value } = symbolChargeSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  if (error) {
+    throw new AppError(error.details.map((detail) => detail.message).join(', '), 400);
+  }
+
+  await ChargeService.updateSymbolCharges(symbolId, value);
+
+  const updatedSymbols = await ChargeService.listSymbolCharges();
+  const updatedSymbol = updatedSymbols.find((row) => row.id === symbolId);
+
+  if (!updatedSymbol) {
+    throw new AppError('Symbol not found after update', 404);
+  }
+
+  res.json({
+    success: true,
+    data: updatedSymbol
+  });
+}));
+
+const brokerageSchema = Joi.object({
+  accountType: Joi.string().max(50).default('live'),
+  standard: Joi.object({
+    commission: Joi.number().required(),
+    spreadMarkup: Joi.number().required(),
+    commissionUnit: Joi.string().valid('per_lot', 'percentage', 'fixed').optional(),
+    spreadUnit: Joi.string().valid('pips', 'per_lot', 'fixed', 'percentage').optional()
+  }).optional(),
+  vip: Joi.object({
+    commission: Joi.number().required(),
+    spreadMarkup: Joi.number().required(),
+    commissionUnit: Joi.string().valid('per_lot', 'percentage', 'fixed').optional(),
+    spreadUnit: Joi.string().valid('pips', 'per_lot', 'fixed', 'percentage').optional()
+  }).optional()
+}).or('standard', 'vip');
+
+router.put('/trading/charges/brokerage', asyncHandler(async (req, res) => {
+  const { error, value } = brokerageSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  if (error) {
+    throw new AppError(error.details.map((detail) => detail.message).join(', '), 400);
+  }
+
+  const { accountType, standard, vip } = value;
+
+  const promises = [];
+  if (standard) {
+    promises.push(ChargeService.upsertBrokerageRate({
+      accountType,
+      tierLevel: 'standard',
+      commission: standard.commission,
+      spreadMarkup: standard.spreadMarkup,
+      commissionUnit: standard.commissionUnit || 'per_lot',
+      spreadUnit: standard.spreadUnit || 'pips'
+    }));
+  }
+  if (vip) {
+    promises.push(ChargeService.upsertBrokerageRate({
+      accountType,
+      tierLevel: 'vip',
+      commission: vip.commission,
+      spreadMarkup: vip.spreadMarkup,
+      commissionUnit: vip.commissionUnit || 'per_lot',
+      spreadUnit: vip.spreadUnit || 'pips'
+    }));
+  }
+
+  await Promise.all(promises);
+
+  const updatedRates = await ChargeService.getBrokerageRates();
+
+  res.json({
+    success: true,
+    data: updatedRates
+  });
+}));
+
+const leverageSchema = Joi.object({
+  defaultLeverage: Joi.number().positive().optional(),
+  maxLeverage: Joi.number().positive().optional()
+}).min(1);
+
+router.patch('/trading/charges/leverage', asyncHandler(async (req, res) => {
+  const { error, value } = leverageSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  if (error) {
+    throw new AppError(error.details.map((detail) => detail.message).join(', '), 400);
+  }
+
+  const updates = [];
+
+  if (value.defaultLeverage !== undefined) {
+    updates.push(executeQuery(
+      `UPDATE system_settings
+       SET setting_value = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE setting_key = 'default_leverage'`,
+      [value.defaultLeverage]
+    ));
+  }
+
+  if (value.maxLeverage !== undefined) {
+    updates.push(executeQuery(
+      `UPDATE system_settings
+       SET setting_value = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE setting_key = 'max_leverage'`,
+      [value.maxLeverage]
+    ));
+  }
+
+  await Promise.all(updates);
+
+  const leverageSettings = await executeQuery(
+    `SELECT setting_key, setting_value
+     FROM system_settings
+     WHERE setting_key IN ('default_leverage', 'max_leverage')`
+  );
+
+  const leverage = {
+    defaultLeverage: 0,
+    maxLeverage: 0
+  };
+
+  leverageSettings.forEach((row) => {
+    const numericValue = Number(row.setting_value);
+    if (row.setting_key === 'default_leverage') {
+      leverage.defaultLeverage = Number.isFinite(numericValue) ? numericValue : 0;
+    }
+    if (row.setting_key === 'max_leverage') {
+      leverage.maxLeverage = Number.isFinite(numericValue) ? numericValue : 0;
+    }
+  });
+
+  res.json({
+    success: true,
+    data: leverage
   });
 }));
 

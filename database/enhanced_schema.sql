@@ -23,6 +23,10 @@ ADD COLUMN trading_experience_years INT DEFAULT 0,
 ADD COLUMN risk_tolerance ENUM('low', 'medium', 'high') DEFAULT 'medium',
 ADD COLUMN investment_goals TEXT;
 
+-- Ensure symbols support configurable spread markups
+ALTER TABLE symbols
+ADD COLUMN IF NOT EXISTS spread_markup DECIMAL(10,4) DEFAULT 0.0000 AFTER spread_type;
+
 -- =================================================================
 -- 2. API KEYS MANAGEMENT SYSTEM
 -- =================================================================

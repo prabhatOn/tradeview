@@ -83,6 +83,25 @@ async function runMigration() {
       }
     }
 
+    // Ensure symbols table has spread markup support
+    const [symbolColumns] = await connection.execute(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'symbols'
+    `, [process.env.DB_NAME || 'pro2']);
+
+    const existingSymbolColumns = symbolColumns.map(row => row.COLUMN_NAME);
+
+    if (!existingSymbolColumns.includes('spread_markup')) {
+      await connection.execute(`
+        ALTER TABLE symbols
+        ADD COLUMN spread_markup DECIMAL(10,4) DEFAULT 0.0000 AFTER spread_type
+      `);
+      console.log('  ✅ Added spread_markup column to symbols table');
+    } else {
+      console.log('  ⏭️ spread_markup column already exists on symbols table');
+    }
+
     // Step 3: Create API keys management system
     console.log('📝 Step 2: Creating API keys management system...');
     await connection.execute(`

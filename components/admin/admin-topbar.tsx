@@ -130,12 +130,14 @@ export function AdminTopBar({ config }: AdminTopBarProps) {
         </div>
 
         {/* Funds Button */}
-        <Button className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2 shadow-sm hover:shadow-md transition-all duration-200" asChild>
-          <Link href="/admin/deposits-withdrawals">
-            <Wallet className="h-4 w-4 mr-2" />
-            Funds
-          </Link>
-        </Button>
+        {config.showDeposit ? (
+          <Button className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2 shadow-sm hover:shadow-md transition-all duration-200" asChild>
+            <Link href="/admin/deposits-withdrawals">
+              <Wallet className="h-4 w-4 mr-2" />
+              Funds
+            </Link>
+          </Button>
+        ) : null}
 
         {/* Notifications */}
         {config.showNotifications && (

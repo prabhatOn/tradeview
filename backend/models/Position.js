@@ -5,6 +5,7 @@ const { executeQuery } = require('../config/database');
 const IntroducingBrokerService = require('../services/IntroducingBrokerService');
 const TradeHistory = require('./TradeHistory');
 const TradingAccount = require('./TradingAccount');
+const ChargeService = require('../services/ChargeService');
 
 class Position {
   constructor(data) {
@@ -169,10 +170,18 @@ class Position {
       throw new Error('Symbol not found');
     }
 
-    const { commission_value } = symbolInfo[0];
-    
-    // Calculate commission
-    const commission = parseFloat(commission_value) * lotSize;
+    const account = await TradingAccount.findById(accountId);
+    if (!account) {
+      throw new Error('Trading account not found');
+    }
+
+    const chargeProfile = await ChargeService.getChargeProfile({
+      symbolId,
+      accountType: account.accountType || 'live'
+    });
+
+    const computedCommission = ChargeService.calculateCommission(lotSize, chargeProfile);
+    const commission = Number(parseFloat(computedCommission.toFixed(4)));
 
     const result = await executeQuery(
       `INSERT INTO positions (
@@ -186,10 +195,19 @@ class Position {
     // Position openings are not recorded in trade_history
 
     // Update account metrics after opening position
-    const account = await TradingAccount.findById(accountId);
-    if (account) {
-      await account.refreshAccountMetrics();
+    if (commission > 0) {
+      const newBalance = account.balance - commission;
+      await account.updateBalance(
+        newBalance,
+        'commission',
+        -commission,
+        result.insertId,
+        'position_open',
+        `Commission charged for opening position ${symbolId}`
+      );
     }
+
+    await account.refreshAccountMetrics();
 
     // Get the created position with symbol info
     const createdPosition = await executeQuery(
@@ -317,98 +335,125 @@ class Position {
   // Close position
   async close(closePrice, closeReason = 'manual') {
     const finalProfit = this.calculateProfit(closePrice);
+    const commissionCharge = this.commission || 0;
     let ibCommissionResult = null;
-    
-    // Update position status in database
+    const closedAtDate = new Date();
+
+    const account = await TradingAccount.findById(this.accountId);
+    const chargeProfile = await ChargeService.getChargeProfile({
+      symbolId: this.symbolId,
+      accountType: account?.accountType || 'live'
+    });
+
+    const swapComputed = ChargeService.calculateSwap({
+      lotSize: this.lotSize,
+      side: this.side,
+      openedAt: this.openedAt,
+      closedAt: closedAtDate,
+      profile: chargeProfile
+    });
+
+    const swapCharge = Number(parseFloat(swapComputed.toFixed(4)));
+    const netProfit = finalProfit - commissionCharge - swapCharge;
+
     await executeQuery(
       `UPDATE positions 
        SET status = 'closed', current_price = ?, close_price = ?, profit = ?, profit_loss = ?, 
-           closed_at = NOW(), close_time = NOW(), close_reason = ?, updated_at = CURRENT_TIMESTAMP
+           commission = ?, swap = ?, closed_at = ?, close_time = ?, close_reason = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [closePrice, closePrice, finalProfit, finalProfit, closeReason, this.id]
+      [closePrice, closePrice, finalProfit, netProfit, commissionCharge, swapCharge, closedAtDate, closedAtDate, closeReason, this.id]
     );
 
-    // Record position closing in trade history
-    const tradeHistoryId = await TradeHistory.recordPositionClose({
-      accountId: this.accountId,
-      symbolId: this.symbolId,
-      positionId: this.id,
-      side: this.side,
-      lotSize: this.lotSize,
-      openPrice: this.openPrice,
-      closePrice,
-      stopLoss: this.stopLoss,
-      takeProfit: this.takeProfit,
-      commission: this.commission,
-      swap: this.swap,
-      profit: finalProfit,
-      closeReason,
-      comment: this.comment,
-      magicNumber: this.magicNumber,
-      openedAt: this.openedAt
-    });
+    let tradeHistoryId = null;
+    try {
+      tradeHistoryId = await TradeHistory.recordPositionClose({
+        accountId: this.accountId,
+        symbolId: this.symbolId,
+        positionId: this.id,
+        side: this.side,
+        lotSize: this.lotSize,
+        openPrice: this.openPrice,
+        closePrice,
+        stopLoss: this.stopLoss,
+        takeProfit: this.takeProfit,
+        commission: commissionCharge,
+        swap: swapCharge,
+        profit: netProfit,
+        closeReason,
+        comment: this.comment,
+        magicNumber: this.magicNumber,
+        openedAt: this.openedAt,
+        closedAt: closedAtDate.toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to record trade history for closed position:', error);
+    }
 
-    // Update account balance with profit/loss
-    const account = await TradingAccount.findById(this.accountId);
     if (account) {
-      const newBalance = account.balance + finalProfit;
+      const newBalance = account.balance + netProfit;
       await account.updateBalance(
         newBalance,
-        finalProfit >= 0 ? 'trade_profit' : 'trade_loss',
-        finalProfit,
+        netProfit >= 0 ? 'trade_profit' : 'trade_loss',
+        netProfit,
         this.id,
         'position_close',
-        `Position closed: ${this.symbol} ${this.side} ${this.lotSize} lots`
+        `Position closed: ${this.symbol || this.symbolId} ${this.side} ${this.lotSize} lots`
       );
 
-      // Process IB commission if applicable
       try {
-        ibCommissionResult = await IntroducingBrokerService.processTradeCommission(
-          account.userId,
-          tradeHistoryId,
-          this.id,
-          Math.abs(this.lotSize),
-          finalProfit
-        );
+        if (tradeHistoryId) {
+          ibCommissionResult = await IntroducingBrokerService.processTradeCommission(
+            account.userId,
+            tradeHistoryId,
+            this.id,
+            Math.abs(this.lotSize),
+            netProfit
+          );
 
-        if (ibCommissionResult && global.broadcast) {
-          global.broadcast({
-            type: 'ib_commission_recorded',
-            userId: ibCommissionResult.ibUserId,
-            data: {
-              commissionId: ibCommissionResult.commissionId,
-              tradeId: tradeHistoryId,
-              positionId: this.id,
-              clientUserId: account.userId,
-              commissionAmount: ibCommissionResult.commissionAmount,
-              commissionRate: ibCommissionResult.commissionRate,
-              tradeVolume: ibCommissionResult.tradeVolume,
-              profit: finalProfit,
-              symbol: this.symbol,
-              side: this.side,
-              lotSize: this.lotSize,
-              closedAt: new Date().toISOString()
-            }
-          });
+          if (ibCommissionResult && global.broadcast) {
+            global.broadcast({
+              type: 'ib_commission_recorded',
+              userId: ibCommissionResult.ibUserId,
+              data: {
+                commissionId: ibCommissionResult.commissionId,
+                tradeId: tradeHistoryId,
+                positionId: this.id,
+                clientUserId: account.userId,
+                commissionAmount: ibCommissionResult.commissionAmount,
+                commissionRate: ibCommissionResult.commissionRate,
+                tradeVolume: ibCommissionResult.tradeVolume,
+                profit: netProfit,
+                symbol: this.symbol,
+                side: this.side,
+                lotSize: this.lotSize,
+                closedAt: closedAtDate.toISOString()
+              }
+            });
+          }
         }
       } catch (error) {
         console.error('Failed to process IB commission:', error);
       }
+
+      await account.refreshAccountMetrics();
     }
 
     this.status = 'closed';
     this.currentPrice = closePrice;
     this.closePrice = closePrice;
     this.profit = finalProfit;
-    const closedAtIso = new Date().toISOString();
-    this.closedAt = closedAtIso;
-    this.closeTime = closedAtIso;
+    this.swap = swapCharge;
+    this.closedAt = closedAtDate.toISOString();
+    this.closeTime = this.closedAt;
     this.closeReason = closeReason;
 
     return {
       positionId: this.id,
       closePrice,
       finalProfit,
+      netProfit,
+      commission: commissionCharge,
+      swap: swapCharge,
       closeReason,
       tradeHistoryId,
       ibCommission: ibCommissionResult

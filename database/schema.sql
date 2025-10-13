@@ -178,6 +178,7 @@ CREATE TABLE symbols (
     contract_size DECIMAL(12,4) DEFAULT 100000.0000,
     margin_requirement DECIMAL(8,4) DEFAULT 1.0000,
     spread_type ENUM('fixed', 'floating') DEFAULT 'floating',
+    spread_markup DECIMAL(10,4) DEFAULT 0.0000,
     commission_type ENUM('per_lot', 'percentage', 'fixed') DEFAULT 'per_lot',
     commission_value DECIMAL(10,4) DEFAULT 0.0000,
     swap_long DECIMAL(10,4) DEFAULT 0.0000,
