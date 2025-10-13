@@ -80,7 +80,12 @@ const adminMiddleware = (req, res, next) => {
     ? req.user.roles.some((role) => {
         if (typeof role !== 'string') return false;
         const normalized = role.trim().toLowerCase();
-        return normalized === 'admin' || normalized === 'manager';
+        return (
+          normalized === 'admin' ||
+          normalized === 'manager' ||
+          normalized === 'super admin' ||
+          normalized === 'super_admin'
+        );
       })
     : false;
 

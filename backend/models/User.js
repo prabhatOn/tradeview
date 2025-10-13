@@ -1,5 +1,6 @@
-const { executeQuery, executeTransaction, executeTransactionQueries } = require('../config/database');
-const bcrypt = require('bcryptjs');
+import { executeQuery, executeTransactionQueries } from '../config/database';
+import bcrypt from 'bcryptjs';
+import TradingAccount from './TradingAccount';
 
 class User {
   constructor(data) {
@@ -140,7 +141,6 @@ class User {
 
   // Get user's trading accounts
   async getTradingAccounts() {
-    const TradingAccount = require('./TradingAccount');
     return await TradingAccount.findByUserId(this.id);
   }
 
@@ -208,4 +208,4 @@ class User {
   }
 }
 
-module.exports = User;
+export default User;

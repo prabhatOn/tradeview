@@ -19,6 +19,19 @@ The schema follows normalization principles (1NF, 2NF, 3NF) to ensure:
 - **Maintainability**: Easy to modify and extend
 - **Performance**: Optimized with proper indexing
 
+## Quick Reset Script
+
+Use `cleanup_and_seed_admin.sql` whenever you need to wipe all user-generated data and reseed the platform with a default super admin account. The script:
+- Truncates user/authentication, trading, transaction, IB, and support tables only if they exist
+- Seeds core roles (`Super Admin`, `Admin`, `Manager`, `Trader`)
+- Inserts an `admin@tradingplatform.com` user with password `admin123`
+- Creates a live trading account with a \$100,000 balance and baseline balance history entry
+
+> **How to run:**
+> 1. Connect to the target database (e.g., `USE pro2;`).
+> 2. Execute the script in a MySQL client (`SOURCE cleanup_and_seed_admin.sql;`).
+> 3. Update the seeded admin password immediately after login.
+
 ## Table Structure Overview
 
 ### Core User Management
