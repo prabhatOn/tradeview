@@ -34,6 +34,11 @@ const normalizeUser = (user: User): User => {
   const emailVerified = user.emailVerified ?? user.email_verified;
   const kycStatus = user.kycStatus ?? user.kyc_status;
   const avatarUrl = user.avatarUrl ?? user.avatar_url;
+  const preferredLeverageRaw = user.preferredLeverage ?? user.preferred_leverage;
+  const preferredLeverage =
+    preferredLeverageRaw === null || preferredLeverageRaw === undefined
+      ? undefined
+      : Number(preferredLeverageRaw);
 
   return {
     ...user,
@@ -45,6 +50,7 @@ const normalizeUser = (user: User): User => {
     emailVerified,
     kycStatus,
     avatarUrl,
+  preferredLeverage: Number.isFinite(preferredLeverage) ? preferredLeverage : undefined,
     roles: normalizedRoles,
     role: normalizedRole,
     first_name: user.first_name ?? firstName,
@@ -55,6 +61,9 @@ const normalizeUser = (user: User): User => {
     email_verified: user.email_verified ?? emailVerified,
     kyc_status: user.kyc_status ?? kycStatus,
     avatar_url: user.avatar_url ?? avatarUrl,
+    preferred_leverage:
+      user.preferred_leverage ??
+      (Number.isFinite(preferredLeverage) ? preferredLeverage : user.preferred_leverage),
   } as User;
 };
 
@@ -130,6 +139,7 @@ interface AuthContextType extends AuthState {
     phone?: string;
     referralCode?: string;
     acceptTerms: boolean;
+    preferredLeverage: number;
   }) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
@@ -206,6 +216,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     phone?: string;
     referralCode?: string;
     acceptTerms: boolean;
+    preferredLeverage: number;
   }) => {
     try {
       dispatch({ type: 'AUTH_START' });

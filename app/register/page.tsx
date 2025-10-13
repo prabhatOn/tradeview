@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, Eye, EyeOff, TrendingUp, CheckCircle, Sun, Moon } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTheme } from "next-themes"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -22,7 +23,8 @@ export default function RegisterPage() {
     password: "",
     confirmPassword: "",
     referralCode: "",
-    acceptTerms: false
+    acceptTerms: false,
+    preferredLeverage: "100"
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -92,7 +94,8 @@ export default function RegisterPage() {
         lastName: formData.lastName,
         phone: formData.phone,
         referralCode: formData.referralCode || undefined,
-        acceptTerms: formData.acceptTerms
+        acceptTerms: formData.acceptTerms,
+        preferredLeverage: Number(formData.preferredLeverage)
       })
       
       setSuccess(true)
@@ -244,6 +247,39 @@ export default function RegisterPage() {
                   placeholder="+1 (555) 123-4567"
                   className="bg-background border-border text-foreground placeholder-muted-foreground"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="preferredLeverage" className="text-foreground">Preferred Account Leverage</Label>
+                <Select
+                  value={formData.preferredLeverage}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      preferredLeverage: value
+                    }))
+                  }
+                >
+                  <SelectTrigger id="preferredLeverage" className="bg-background border-border text-foreground">
+                    <SelectValue placeholder="Select leverage" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: "100", label: "1:100" },
+                      { value: "200", label: "1:200" },
+                      { value: "500", label: "1:500" },
+                      { value: "1000", label: "1:1000" },
+                      { value: "2000", label: "1:2000" }
+                    ].map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choose the leverage that will be applied to your trading account.
+                </p>
               </div>
 
               <div className="space-y-2">

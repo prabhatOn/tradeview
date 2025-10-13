@@ -7,6 +7,7 @@ const { asyncHandler, AppError } = require('../middleware/errorHandler');
 
 const { adminMiddleware } = require('../middleware/auth');
 const FundManager = require('../services/FundManager');
+const { selectColumnOrNull } = require('../utils/schemaUtils');
 
 const router = express.Router();
 router.use(adminMiddleware);
@@ -153,6 +154,8 @@ router.get('/transactions', asyncHandler(async (req, res) => {
   const offset = (page - 1) * limit;
   const table = type === 'deposits' ? 'deposits' : 'withdrawals';
 
+  const reviewNotesSelect = await selectColumnOrNull(table, 'review_notes');
+
   const filters = [];
   const params = [];
 
@@ -186,7 +189,7 @@ router.get('/transactions', asyncHandler(async (req, res) => {
       ${table}.payment_reference,
       ${table}.user_notes,
       ${table}.admin_notes,
-      ${table}.review_notes,
+  ${reviewNotesSelect},
       ${table}.created_at,
       ${table}.processed_at,
       ${table}.reviewed_at,

@@ -11,6 +11,8 @@ const TradingAccount = require('../models/TradingAccount');
 const FundManager = require('../services/FundManager');
 const ChargeService = require('../services/ChargeService');
 
+const ALLOWED_LEVERAGE_VALUES = [100, 200, 500, 1000, 2000];
+
 const createUserSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(8).required(),
@@ -23,6 +25,7 @@ const createUserSchema = Joi.object({
   role: Joi.string().valid('user', 'admin', 'manager', 'support').default('user'),
   emailVerified: Joi.boolean().default(false),
   kycStatus: Joi.string().valid('pending', 'submitted', 'approved', 'rejected').default('pending'),
+  preferredLeverage: Joi.number().valid(...ALLOWED_LEVERAGE_VALUES).default(100)
 });
 
 const updateVerificationSchema = Joi.object({
@@ -2270,6 +2273,227 @@ router.patch('/trading/charges/leverage', asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: leverage
+  });
+}));
+
+const adminTradingUserLeverageFilterSchema = Joi.object({
+  leverage: Joi.number().valid(...ALLOWED_LEVERAGE_VALUES).optional(),
+  search: Joi.string().trim().allow('', null).optional(),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(25)
+});
+
+const adminUpdateUserLeverageSchema = Joi.object({
+  preferredLeverage: Joi.number().valid(...ALLOWED_LEVERAGE_VALUES).required()
+});
+
+const normalizePreferredLeverage = (value) => {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const mapAccountRowToSummary = (row) => ({
+  accountId: row.id,
+  accountNumber: row.account_number,
+  accountType: row.account_type,
+  leverage: normalizePreferredLeverage(row.leverage),
+  status: row.status,
+  updatedAt: row.updated_at
+});
+
+const buildUserLeverageDataset = async ({ leverage, search, page, limit }) => {
+  const filters = [];
+  const params = [];
+
+  if (typeof search === 'string' && search.trim().length) {
+    const like = `%${search.trim()}%`;
+    filters.push(`(u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)`);
+    params.push(like, like, like);
+  }
+
+  if (leverage !== undefined) {
+    filters.push('u.preferred_leverage = ?');
+    params.push(leverage);
+  }
+
+  const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const offset = (page - 1) * limit;
+
+  const users = await executeQuery(
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.preferred_leverage, u.updated_at, u.created_at
+     FROM users u
+     ${whereClause}
+     ORDER BY u.created_at DESC
+     LIMIT ? OFFSET ?`,
+    [...params, limit, offset]
+  );
+
+  const totalRows = await executeQuery(
+    `SELECT COUNT(*) as count FROM users u ${whereClause}`,
+    params
+  );
+
+  let accountRows = [];
+  const userIds = users.map((row) => row.id);
+  if (userIds.length) {
+    const placeholders = userIds.map(() => '?').join(',');
+    accountRows = await executeQuery(
+      `SELECT id, user_id, account_number, account_type, leverage, status, updated_at
+       FROM trading_accounts
+       WHERE user_id IN (${placeholders})`,
+      userIds
+    );
+  }
+
+  const accountMap = new Map();
+  accountRows.forEach((row) => {
+    if (!accountMap.has(row.user_id)) {
+      accountMap.set(row.user_id, []);
+    }
+    accountMap.get(row.user_id).push(mapAccountRowToSummary(row));
+  });
+
+  const rows = users.map((row) => {
+    const fullName = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+
+    return {
+      userId: row.id,
+      email: row.email,
+      name: fullName.length ? fullName : row.email,
+      preferredLeverage: normalizePreferredLeverage(row.preferred_leverage),
+      updatedAt: row.updated_at,
+      accounts: accountMap.get(row.id) || []
+    };
+  });
+
+  return {
+    rows,
+    pagination: {
+      page,
+      limit,
+      total: totalRows.length ? Number(totalRows[0].count) : rows.length,
+      pages: totalRows.length ? Math.ceil(Number(totalRows[0].count) / limit) : 1
+    }
+  };
+};
+
+const updateUserPreferredLeverage = async (userId, preferredLeverage) => {
+  const userRows = await executeQuery('SELECT id, email, first_name, last_name FROM users WHERE id = ? LIMIT 1', [userId]);
+  if (!userRows.length) {
+    throw new AppError('User not found', 404);
+  }
+
+  await executeQuery(
+    `UPDATE users
+     SET preferred_leverage = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [preferredLeverage, userId]
+  );
+
+  await executeQuery(
+    `UPDATE trading_accounts
+     SET leverage = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE user_id = ?`,
+    [preferredLeverage, userId]
+  );
+
+  const [userRow] = await executeQuery(
+    `SELECT id, email, first_name, last_name, preferred_leverage, updated_at
+     FROM users
+     WHERE id = ?`,
+    [userId]
+  );
+
+  if (!userRow) {
+    throw new AppError('User not found after update', 404);
+  }
+
+  const accounts = await executeQuery(
+    `SELECT id, user_id, account_number, account_type, leverage, status, updated_at
+     FROM trading_accounts
+     WHERE user_id = ?`,
+    [userId]
+  );
+
+  const fullName = [userRow.first_name, userRow.last_name].filter(Boolean).join(' ').trim();
+
+  return {
+    userId: userRow.id,
+    email: userRow.email,
+    name: fullName.length ? fullName : userRow.email,
+    preferredLeverage: normalizePreferredLeverage(userRow.preferred_leverage),
+    updatedAt: userRow.updated_at,
+    accounts: accounts.map(mapAccountRowToSummary)
+  };
+};
+
+router.get('/trading/charges/users', asyncHandler(async (req, res) => {
+  const { error, value } = adminTradingUserLeverageFilterSchema.validate(req.query, { convert: true, stripUnknown: true });
+  if (error) {
+    throw new AppError(error.details.map((detail) => detail.message).join(', '), 400);
+  }
+
+  const data = await buildUserLeverageDataset(value);
+
+  res.json({
+    success: true,
+    data
+  });
+}));
+
+router.get('/trading/users/leverage', asyncHandler(async (req, res) => {
+  const { error, value } = adminTradingUserLeverageFilterSchema.validate(req.query, { convert: true, stripUnknown: true });
+  if (error) {
+    throw new AppError(error.details.map((detail) => detail.message).join(', '), 400);
+  }
+
+  const data = await buildUserLeverageDataset(value);
+
+  res.json({
+    success: true,
+    data
+  });
+}));
+
+router.patch('/trading/charges/users/:userId/leverage', asyncHandler(async (req, res) => {
+  const userId = Number.parseInt(req.params.userId, 10);
+  if (Number.isNaN(userId)) {
+    throw new AppError('Invalid user id', 400);
+  }
+
+  const { error, value } = adminUpdateUserLeverageSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  if (error) {
+    throw new AppError(error.details.map((detail) => detail.message).join(', '), 400);
+  }
+
+  const data = await updateUserPreferredLeverage(userId, value.preferredLeverage);
+
+  res.json({
+    success: true,
+    data
+  });
+}));
+
+router.patch('/users/:userId/leverage', asyncHandler(async (req, res) => {
+  const userId = Number.parseInt(req.params.userId, 10);
+  if (Number.isNaN(userId)) {
+    throw new AppError('Invalid user id', 400);
+  }
+
+  const { error, value } = adminUpdateUserLeverageSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  if (error) {
+    throw new AppError(error.details.map((detail) => detail.message).join(', '), 400);
+  }
+
+  const data = await updateUserPreferredLeverage(userId, value.preferredLeverage);
+
+  res.json({
+    success: true,
+    data
   });
 }));
 

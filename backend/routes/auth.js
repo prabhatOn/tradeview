@@ -13,6 +13,8 @@ const IntroducingBrokerService = require('../services/IntroducingBrokerService')
 const router = express.Router();
 
 // Validation schemas
+const ALLOWED_LEVERAGE_VALUES = [100, 200, 500, 1000, 2000];
+
 const registerSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(8).required(),
@@ -22,7 +24,7 @@ const registerSchema = Joi.object({
   phoneCountryCode: Joi.string().max(5).optional(),
   country: Joi.string().length(3).optional(), // ISO 3-letter country code
   preferredCurrency: Joi.string().length(3).default('USD'), // ISO currency code
-  preferredLeverage: Joi.number().min(1).max(1000).default(100),
+  preferredLeverage: Joi.number().valid(...ALLOWED_LEVERAGE_VALUES).default(100),
   address: Joi.string().max(500).optional(),
   city: Joi.string().max(100).optional(),
   postalCode: Joi.string().max(20).optional(),
@@ -56,7 +58,7 @@ router.post('/register', asyncHandler(async (req, res) => {
     throw new AppError(error.details[0].message, 400);
   }
 
-  const { email, password, firstName, lastName, phone, referralCode } = value;
+  const { email, password, firstName, lastName, phone, referralCode, preferredLeverage } = value;
 
   // Check if user already exists
   const existingUser = await User.findByEmail(email);
@@ -71,9 +73,10 @@ router.post('/register', asyncHandler(async (req, res) => {
   // Create user directly
   const userResult = await executeQuery(
     `INSERT INTO users (
-      email, password_hash, first_name, last_name, phone, status
-    ) VALUES (?, ?, ?, ?, ?, 'active')`,
-    [email, hashedPassword, firstName, lastName, phone || null]
+      email, password_hash, first_name, last_name, phone, status, preferred_leverage
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?)`
+    ,
+    [email, hashedPassword, firstName, lastName, phone || null, preferredLeverage]
   );
 
   const userId = userResult.insertId;
@@ -88,8 +91,8 @@ router.post('/register', asyncHandler(async (req, res) => {
     `INSERT INTO trading_accounts (
       user_id, account_number, account_type, currency, leverage, 
       balance, equity, free_margin, status
-    ) VALUES (?, ?, 'demo', 'USD', 100, 100000.00, 100000.00, 100000.00, 'active')`,
-    [userId, accountNumber]
+    ) VALUES (?, ?, 'demo', 'USD', ?, 100000.00, 100000.00, 100000.00, 'active')`,
+    [userId, accountNumber, preferredLeverage]
   );
 
   // Handle referral code if provided
@@ -296,7 +299,7 @@ router.post('/register-simple', asyncHandler(async (req, res) => {
     throw new AppError(error.details[0].message, 400);
   }
 
-  const { email, password, firstName, lastName, phone } = value;
+  const { email, password, firstName, lastName, phone, preferredLeverage } = value;
 
   // Check if user already exists
   const existingUsers = await executeQuery('SELECT id FROM users WHERE email = ?', [email]);
@@ -311,9 +314,9 @@ router.post('/register-simple', asyncHandler(async (req, res) => {
   // Create user
   const userResult = await executeQuery(
     `INSERT INTO users (
-      email, password_hash, first_name, last_name, phone, status
-    ) VALUES (?, ?, ?, ?, ?, 'active')`,
-    [email, hashedPassword, firstName, lastName, phone || null]
+      email, password_hash, first_name, last_name, phone, status, preferred_leverage
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?)`,
+    [email, hashedPassword, firstName, lastName, phone || null, preferredLeverage]
   );
 
   const userId = userResult.insertId;
@@ -324,8 +327,8 @@ router.post('/register-simple', asyncHandler(async (req, res) => {
     `INSERT INTO trading_accounts (
       user_id, account_number, account_type, currency, leverage, 
       balance, equity, free_margin, status
-    ) VALUES (?, ?, 'demo', 'USD', 100, 100000.00, 100000.00, 100000.00, 'active')`,
-    [userId, accountNumber]
+    ) VALUES (?, ?, 'demo', 'USD', ?, 100000.00, 100000.00, 100000.00, 'active')`,
+    [userId, accountNumber, preferredLeverage]
   );
 
   // Get the created user data

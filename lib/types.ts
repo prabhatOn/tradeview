@@ -58,6 +58,8 @@ export interface User {
   avatar_url?: string;
 
   phone?: string;
+  preferredLeverage?: number | string | null;
+  preferred_leverage?: number | string | null;
   bio?: string;
   status: 'active' | 'suspended' | 'inactive' | 'pending_verification';
   role?: string; // Single role from backend
@@ -372,6 +374,29 @@ export interface AdminTradingChargesResponseData {
   leverage: AdminTradingLeverageSettings;
 }
 
+export interface AdminTradingUserAccountSummary {
+  accountId: number;
+  accountNumber: string;
+  accountType: string;
+  leverage: number;
+  status: string;
+  updatedAt?: string | null;
+}
+
+export interface AdminTradingUserLeverageRow {
+  userId: number;
+  email: string;
+  name: string;
+  preferredLeverage: number;
+  updatedAt?: string | null;
+  accounts: AdminTradingUserAccountSummary[];
+}
+
+export interface AdminTradingUserLeverageResponse {
+  rows: AdminTradingUserLeverageRow[];
+  pagination: PaginationInfo;
+}
+
 export interface AdminUpdateSymbolChargePayload {
   commissionPerLot?: number;
   swapLong?: number;
@@ -397,6 +422,10 @@ export interface AdminBrokerageUpdatePayload {
 export interface AdminLeverageUpdatePayload {
   defaultLeverage?: number;
   maxLeverage?: number;
+}
+
+export interface AdminUpdateUserLeveragePayload {
+  preferredLeverage: number;
 }
 
 export interface AdminTradingOverview {

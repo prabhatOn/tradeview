@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -178,14 +178,22 @@ function formatDateTime(value: string | null | undefined): string {
 function sanitizeCsvValue(value: unknown): string {
   if (value === null || value === undefined) return ""
   const stringValue = String(value)
-  if (stringValue.includes(",") || stringValue.includes("\"") || stringValue.includes("\n")) {
-    return `"${stringValue.replace(/\"/g, "\"\"")}`
+  if (stringValue.includes(",") || stringValue.includes("\"") || stringValue.includes("\n") || stringValue.includes("\r")) {
+    return `"${stringValue.replace(/"/g, '""')}"`
   }
   return stringValue
 }
 
 function getStatusBadge(status: string): string {
   return statusStyles[status?.toLowerCase()] ?? "bg-muted text-muted-foreground"
+}
+
+function summarizeAccounts(accounts: AdminUserAccountSummary[]) {
+  const totalBalance = accounts.reduce((sum, account) => sum + parseAmount(account.balance), 0)
+  return {
+    totalBalance,
+    accountCount: accounts.length,
+  }
 }
 
 export default function AdminDepositsWithdrawalsPage() {
@@ -233,12 +241,109 @@ export default function AdminDepositsWithdrawalsPage() {
   })
   const [manualSubmitting, setManualSubmitting] = useState(false)
 
+  const isMountedRef = useRef(true)
+  const overviewRequestIdRef = useRef(0)
+  const chartRequestIdRef = useRef(0)
+  const transactionsRequestIdRef = useRef(0)
+
   const manualSearchHasQuery = manualSearch.trim().length > 0
   const manualResultsEmpty = !manualSearchLoading && manualSearchResults.length === 0
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   const manualSelectedAccount = useMemo(
     () => manualUserAccounts.find((account) => String(account.id) === manualAdjustmentForm.accountId) ?? null,
     [manualUserAccounts, manualAdjustmentForm.accountId],
+  )
+
+  const refreshManualUserDetail = useCallback(
+    async (
+      userId: number,
+      {
+        preserveAccountSelection = false,
+        summarySeed = null,
+        suppressToastOnError = false,
+      }: {
+        preserveAccountSelection?: boolean
+        summarySeed?: AdminUserSummary | null
+        suppressToastOnError?: boolean
+      } = {},
+    ) => {
+      setManualAccountsLoading(true)
+      try {
+        const response = await adminService.getUser(userId)
+        if (!response.success || !response.data) {
+          throw new Error(response.message || "Unable to load user detail")
+        }
+
+        const detail = response.data
+        const accounts = detail.accounts ?? []
+        const { totalBalance, accountCount } = summarizeAccounts(accounts)
+
+        setManualSelectedUserDetail(detail)
+        setManualUserAccounts(accounts)
+
+        setManualAdjustmentForm((prev) => {
+          const hasExistingSelection =
+            preserveAccountSelection && prev.accountId && accounts.some((account) => String(account.id) === prev.accountId)
+          const fallbackAccountId = accounts.length > 0 ? String(accounts[0].id) : ""
+          return {
+            ...prev,
+            accountId: hasExistingSelection ? prev.accountId : fallbackAccountId,
+            reasonCode: prev.reasonCode || (manualTab === "ib" ? IB_REASON_DEFAULT : USER_REASON_DEFAULT),
+          }
+        })
+
+        const applySummaryEnhancements = (candidate: AdminUserSummary | null | undefined) => {
+          if (!candidate || candidate.id !== detail.user.id) {
+            return candidate || null
+          }
+          return {
+            ...candidate,
+            totalBalance,
+            total_balance: totalBalance,
+            tradingAccountsCount: accountCount,
+            trading_accounts_count: accountCount,
+          }
+        }
+
+        setManualSelectedUserSummary((prev) => {
+          if (prev && prev.id === detail.user.id) {
+            return applySummaryEnhancements(prev)
+          }
+          if (summarySeed && summarySeed.id === detail.user.id) {
+            return applySummaryEnhancements(summarySeed)
+          }
+          return prev
+        })
+
+        setManualSearchResults((prev) =>
+          prev.map((candidate) => (candidate.id === detail.user.id ? (applySummaryEnhancements(candidate) as AdminUserSummary) : candidate)),
+        )
+
+        return detail
+      } catch (error) {
+        if (!suppressToastOnError) {
+          const message = error instanceof Error ? error.message : "Unable to load user detail"
+          toast({ variant: "destructive", title: "Failed to load user", description: message })
+        }
+        if (!preserveAccountSelection) {
+          setManualAdjustmentForm((prev) => ({
+            ...prev,
+            accountId: "",
+          }))
+        }
+        throw error
+      } finally {
+        setManualAccountsLoading(false)
+      }
+    },
+    [manualTab, toast],
   )
 
   const getDisplayName = useCallback((user?: AdminUserSummary | AdminUserDetail["user"] | null) => {
@@ -285,34 +390,54 @@ export default function AdminDepositsWithdrawalsPage() {
   }, [])
 
   const loadOverview = useCallback(async () => {
+    const requestId = ++overviewRequestIdRef.current
     setOverviewLoading(true)
     try {
       const response = await adminService.getFundsOverview()
       if (!response.success || !response.data) {
         throw new Error(response.message || "Unable to load overview")
       }
+      if (!isMountedRef.current || requestId !== overviewRequestIdRef.current) {
+        return
+      }
       setOverview(response.data)
     } catch (error) {
+      if (!isMountedRef.current || requestId !== overviewRequestIdRef.current) {
+        return
+      }
       const message = error instanceof Error ? error.message : "Unable to load overview"
       toast({ variant: "destructive", title: "Overview unavailable", description: message })
     } finally {
+      if (!isMountedRef.current || requestId !== overviewRequestIdRef.current) {
+        return
+      }
       setOverviewLoading(false)
     }
   }, [toast])
 
   const loadChart = useCallback(
     async (range: typeof chartRange) => {
+      const requestId = ++chartRequestIdRef.current
       setChartLoading(true)
       try {
         const response = await adminService.getFundsChart(range)
         if (!response.success || !response.data) {
           throw new Error(response.message || "Unable to load cashflow chart")
         }
+        if (!isMountedRef.current || requestId !== chartRequestIdRef.current) {
+          return
+        }
         setChartData(response.data)
       } catch (error) {
+        if (!isMountedRef.current || requestId !== chartRequestIdRef.current) {
+          return
+        }
         const message = error instanceof Error ? error.message : "Unable to load cashflow chart"
         toast({ variant: "destructive", title: "Chart unavailable", description: message })
       } finally {
+        if (!isMountedRef.current || requestId !== chartRequestIdRef.current) {
+          return
+        }
         setChartLoading(false)
       }
     },
@@ -320,6 +445,7 @@ export default function AdminDepositsWithdrawalsPage() {
   )
 
   const loadTransactions = useCallback(async () => {
+    const requestId = ++transactionsRequestIdRef.current
     setTransactionsLoading(true)
     try {
       const response = await adminService.getFundsTransactions({
@@ -334,13 +460,23 @@ export default function AdminDepositsWithdrawalsPage() {
         throw new Error(response.message || "Unable to load transactions")
       }
 
+      if (!isMountedRef.current || requestId !== transactionsRequestIdRef.current) {
+        return
+      }
+
       setTransactions(response.data.rows || [])
       setPagination(response.data.pagination)
       setSelectedIds([])
     } catch (error) {
+      if (!isMountedRef.current || requestId !== transactionsRequestIdRef.current) {
+        return
+      }
       const message = error instanceof Error ? error.message : "Unable to load transactions"
       toast({ variant: "destructive", title: "Transactions unavailable", description: message })
     } finally {
+      if (!isMountedRef.current || requestId !== transactionsRequestIdRef.current) {
+        return
+      }
       setTransactionsLoading(false)
     }
   }, [currentType, debouncedSearch, page, statusFilter, toast])
@@ -689,30 +825,15 @@ export default function AdminDepositsWithdrawalsPage() {
     async (user: AdminUserSummary) => {
       setManualSelectedUserId(user.id)
       setManualSelectedUserSummary(user)
-      setManualAccountsLoading(true)
       try {
-        const response = await adminService.getUser(user.id)
-        if (!response.success || !response.data) {
-          throw new Error(response.message || "Unable to load user detail")
-        }
-
-        setManualSelectedUserDetail(response.data)
-        const accounts = response.data.accounts ?? []
-        setManualUserAccounts(accounts)
-        setManualAdjustmentForm((prev) => ({
-          ...prev,
-          accountId: accounts.length > 0 ? String(accounts[0].id) : "",
-          reasonCode: manualTab === "ib" ? IB_REASON_DEFAULT : prev.reasonCode || USER_REASON_DEFAULT,
-        }))
+        await refreshManualUserDetail(user.id, { summarySeed: user, suppressToastOnError: true })
       } catch (error) {
+        resetManualSelection()
         const message = error instanceof Error ? error.message : "Unable to load user detail"
         toast({ variant: "destructive", title: "Failed to load user", description: message })
-        resetManualSelection()
-      } finally {
-        setManualAccountsLoading(false)
       }
     },
-    [manualTab, resetManualSelection, toast],
+    [refreshManualUserDetail, resetManualSelection, toast],
   )
 
   const handleManualFieldChange = (field: keyof typeof manualAdjustmentForm) =>
@@ -776,7 +897,17 @@ export default function AdminDepositsWithdrawalsPage() {
           notes: "",
         }))
 
-        await Promise.allSettled([loadOverview(), loadTransactions()])
+        const refreshTasks: Array<Promise<unknown>> = [loadOverview(), loadTransactions()]
+        if (manualSelectedUserId) {
+          refreshTasks.push(
+            refreshManualUserDetail(manualSelectedUserId, {
+              preserveAccountSelection: true,
+              suppressToastOnError: true,
+            }),
+          )
+        }
+
+        await Promise.allSettled(refreshTasks)
       } catch (error) {
         const message = error instanceof Error ? error.message : "Manual adjustment failed"
         toast({ variant: "destructive", title: "Unable to apply adjustment", description: message })
@@ -798,6 +929,7 @@ export default function AdminDepositsWithdrawalsPage() {
       manualSelectedUserId,
       manualSelectedUserSummary,
       manualTab,
+      refreshManualUserDetail,
       toast,
     ],
   )

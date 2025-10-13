@@ -1,6 +1,74 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { executeQuery, executeTransaction } = require('../config/database');
+const { getTableColumns } = require('../utils/schemaUtils');
+
+let accountBalanceHistoryColumnsPromise;
+
+async function getAccountBalanceHistoryColumns() {
+  if (!accountBalanceHistoryColumnsPromise) {
+    accountBalanceHistoryColumnsPromise = getTableColumns('account_balance_history');
+  }
+  return accountBalanceHistoryColumnsPromise;
+}
+
+async function insertAccountBalanceHistory(connection, data) {
+  const columnsSet = await getAccountBalanceHistoryColumns();
+
+  const requiredColumns = [
+    'account_id',
+    'previous_balance',
+    'new_balance',
+    'change_amount',
+    'change_type'
+  ];
+
+  const optionalColumns = [
+    'change_context',
+    'reference_id',
+    'reference_type',
+    'performed_by_type',
+    'performed_by_id',
+    'metadata',
+    'notes'
+  ];
+
+  const columns = [];
+  const placeholders = [];
+  const values = [];
+
+  for (const column of requiredColumns) {
+    if (!columnsSet.has(column)) {
+      throw new Error(`Required column ${column} missing in account_balance_history table`);
+    }
+    columns.push(column);
+    placeholders.push('?');
+    values.push(Object.prototype.hasOwnProperty.call(data, column) ? data[column] : null);
+  }
+
+  for (const column of optionalColumns) {
+    if (!columnsSet.has(column)) {
+      continue;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(data, column)) {
+      continue;
+    }
+
+    let value = data[column];
+
+    if (column === 'metadata' && value != null) {
+      value = typeof value === 'string' ? value : JSON.stringify(value);
+    }
+
+    columns.push(column);
+    placeholders.push('?');
+    values.push(value);
+  }
+
+  const sql = `INSERT INTO account_balance_history (${columns.join(', ')}) VALUES (${placeholders.join(', ')})`;
+  await connection.execute(sql, values);
+}
 
 class FundManager {
   
@@ -71,7 +139,6 @@ class FundManager {
         throw new Error('Trading account not found');
       }
       
-      const accountOwnerId = accountRows[0].user_id;
       const currentBalance = parseFloat(accountRows[0].balance);
       const newBalance = currentBalance + profit;
       
@@ -224,25 +291,20 @@ class FundManager {
       );
       
       // Record balance history
-      await connection.execute(
-        `INSERT INTO account_balance_history 
-         (account_id, previous_balance, new_balance, change_amount, change_type, change_context, reference_id, reference_type, performed_by_type, performed_by_id, metadata, notes) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          accountId,
-          currentBalance,
-          newBalance,
-          amount,
-          'deposit',
-          'deposit',
-          transactionId,
-          'deposit_transaction',
-          performedByType,
-          performedById,
-          JSON.stringify({ ...metadata, method, transactionId }),
-          `Deposit via ${method}: +$${amount.toFixed(2)}`
-        ]
-      );
+      await insertAccountBalanceHistory(connection, {
+        account_id: accountId,
+        previous_balance: currentBalance,
+        new_balance: newBalance,
+        change_amount: amount,
+        change_type: 'deposit',
+        change_context: 'deposit',
+        reference_id: transactionId,
+        reference_type: 'deposit_transaction',
+        performed_by_type: performedByType,
+        performed_by_id: performedById,
+        metadata: { ...metadata, method, transactionId },
+        notes: `Deposit via ${method}: +$${amount.toFixed(2)}`
+      });
       
       return {
         success: true,
@@ -299,25 +361,20 @@ class FundManager {
       );
       
       // Record balance history
-      await connection.execute(
-        `INSERT INTO account_balance_history 
-         (account_id, previous_balance, new_balance, change_amount, change_type, change_context, reference_id, reference_type, performed_by_type, performed_by_id, metadata, notes) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          accountId,
-          currentBalance,
-          newBalance,
-          -amount,
-          'withdrawal',
-          'withdrawal',
-          transactionId,
-          'withdrawal_transaction',
-          performedByType,
-          performedById,
-          JSON.stringify({ ...metadata, method, transactionId }),
-          `Withdrawal via ${method}: -$${amount.toFixed(2)}`
-        ]
-      );
+      await insertAccountBalanceHistory(connection, {
+        account_id: accountId,
+        previous_balance: currentBalance,
+        new_balance: newBalance,
+        change_amount: -amount,
+        change_type: 'withdrawal',
+        change_context: 'withdrawal',
+        reference_id: transactionId,
+        reference_type: 'withdrawal_transaction',
+        performed_by_type: performedByType,
+        performed_by_id: performedById,
+        metadata: { ...metadata, method, transactionId },
+        notes: `Withdrawal via ${method}: -$${amount.toFixed(2)}`
+      });
       
       return {
         success: true,
@@ -350,7 +407,12 @@ class FundManager {
 
     return executeTransaction(async (connection) => {
       const [accountRows] = await connection.execute(
-        'SELECT user_id, balance, equity, free_margin FROM trading_accounts WHERE id = ?',
+        `SELECT 
+           user_id, account_number, account_type, currency,
+           balance, equity, free_margin, margin_level
+         FROM trading_accounts 
+         WHERE id = ?
+         FOR UPDATE`,
         [accountId]
       );
 
@@ -358,42 +420,116 @@ class FundManager {
         throw new Error('Trading account not found');
       }
 
-      const accountOwnerId = accountRows[0].user_id;
-      const currentBalance = parseFloat(accountRows[0].balance);
+      const accountRow = accountRows[0];
+      const accountOwnerId = accountRow.user_id;
+
+      const parseWithFallback = (value, fallback) => {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+      };
+
+      const currentBalance = parseWithFallback(accountRow.balance, 0);
+      const currentEquity = parseWithFallback(accountRow.equity, currentBalance);
+      const currentFreeMargin = parseWithFallback(accountRow.free_margin, currentBalance);
       const newBalance = currentBalance + signedAmount;
+
+      if (Number.isNaN(currentBalance)) {
+        throw new Error('Unable to determine current balance for trading account');
+      }
 
       if (newBalance < 0) {
         throw new Error('Manual adjustment would result in negative balance');
       }
 
+      const [positionMetricsRows] = await connection.execute(
+        `SELECT 
+           COALESCE(SUM(p.profit), 0) AS unrealizedPnL,
+           COALESCE(SUM(p.lot_size * p.open_price * COALESCE(s.margin_requirement, 1)), 0) AS marginUsed
+         FROM positions p
+         LEFT JOIN symbols s ON s.id = p.symbol_id
+         WHERE p.account_id = ? AND p.status = 'open'`,
+        [accountId]
+      );
+
+      const unrealizedPnL = parseWithFallback(positionMetricsRows[0]?.unrealizedPnL, 0);
+      const marginUsedRaw = parseWithFallback(positionMetricsRows[0]?.marginUsed, 0);
+      const recalculatedEquity = newBalance + unrealizedPnL;
+      const recalculatedFreeMargin = Math.max(recalculatedEquity - marginUsedRaw, 0);
+      const marginLevel = marginUsedRaw > 0
+        ? (recalculatedEquity / marginUsedRaw) * 100
+        : recalculatedEquity > 0
+          ? 9999
+          : 0;
+
       await connection.execute(
         `UPDATE trading_accounts 
-         SET balance = ?, equity = ?, free_margin = ?, updated_at = NOW() 
+         SET balance = ?, equity = ?, free_margin = ?, margin_level = ?, updated_at = NOW() 
          WHERE id = ?`,
-        [newBalance, newBalance, newBalance, accountId]
+        [newBalance, recalculatedEquity, recalculatedFreeMargin, marginLevel, accountId]
       );
+
+      const recalculatedAccount = {
+        id: accountId,
+        user_id: accountOwnerId,
+        account_number: accountRow.account_number,
+        account_type: accountRow.account_type,
+        currency: accountRow.currency,
+        balance: newBalance,
+        equity: recalculatedEquity,
+        free_margin: recalculatedFreeMargin,
+        margin_level: marginLevel
+      };
+
+      const parsedBalance = newBalance;
+      const parsedEquity = recalculatedEquity;
+      const parsedFreeMargin = recalculatedFreeMargin;
 
       const changeType = type === 'credit' ? 'manual_credit' : 'manual_debit';
 
+      const enrichedMetadata = {
+        ...metadata,
+        reasonCode,
+        previousBalance: currentBalance,
+        newBalance,
+        previousEquity: currentEquity,
+        previousFreeMargin: currentFreeMargin,
+        updatedEquity: parsedEquity,
+        updatedFreeMargin: parsedFreeMargin,
+        updatedUnrealizedPnL: unrealizedPnL,
+        updatedMarginUsed: marginUsedRaw
+      };
+
+      await insertAccountBalanceHistory(connection, {
+        account_id: accountId,
+        previous_balance: currentBalance,
+        new_balance: newBalance,
+        change_amount: signedAmount,
+        change_type: changeType,
+        change_context: 'adjustment',
+        reference_id: null,
+        reference_type: 'manual_adjustment',
+        performed_by_type: 'admin',
+        performed_by_id: performedById,
+        metadata: enrichedMetadata,
+        notes: notes || `Manual ${type === 'credit' ? 'credit' : 'debit'} (${reasonCode})`
+      });
+
       await connection.execute(
-        `INSERT INTO account_balance_history 
-         (account_id, previous_balance, new_balance, change_amount, change_type, change_context, reference_id, reference_type, performed_by_type, performed_by_id, metadata, notes) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          accountId,
-          currentBalance,
-          newBalance,
-          signedAmount,
-          changeType,
-          'adjustment',
-          null,
-          'manual_adjustment',
-          'admin',
-          performedById,
-          JSON.stringify({ ...metadata, reasonCode }),
-          notes || `Manual ${type === 'credit' ? 'credit' : 'debit'} (${reasonCode})`
-        ]
+        'UPDATE users SET updated_at = NOW() WHERE id = ?',
+        [accountOwnerId]
       );
+
+      const [aggregateRows] = await connection.execute(
+        `SELECT 
+           COUNT(*) AS accountCount,
+           COALESCE(SUM(balance), 0) AS totalBalance,
+           COALESCE(SUM(equity), 0) AS totalEquity
+         FROM trading_accounts
+         WHERE user_id = ?`,
+        [accountOwnerId]
+      );
+
+      const aggregate = aggregateRows.length ? aggregateRows[0] : { accountCount: 0, totalBalance: 0, totalEquity: 0 };
 
       return {
         success: true,
@@ -403,7 +539,22 @@ class FundManager {
         newBalance,
         change: signedAmount,
         changeType,
-        reasonCode
+        reasonCode,
+        updatedAccount: {
+          id: recalculatedAccount.id,
+          accountNumber: recalculatedAccount.account_number,
+          accountType: recalculatedAccount.account_type,
+          currency: recalculatedAccount.currency,
+          balance: parsedBalance,
+          equity: parsedEquity,
+          freeMargin: parsedFreeMargin,
+          marginLevel: marginLevel
+        },
+        aggregate: {
+          accountCount: Number(aggregate.accountCount) || 0,
+          totalBalance: parseFloat(aggregate.totalBalance) || 0,
+          totalEquity: parseFloat(aggregate.totalEquity) || 0
+        }
       };
     });
   }

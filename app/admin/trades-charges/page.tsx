@@ -30,7 +30,6 @@ import {
   Percent,
   BarChart3,
   Calculator,
-  Shield,
   Target,
   CheckCircle,
   Loader2
@@ -39,7 +38,10 @@ import { adminService } from "@/lib/services"
 import {
   AdminBrokerageUpdatePayload,
   AdminSymbolChargeRow,
-  AdminTradingChargesResponseData
+  AdminTradingChargesResponseData,
+  AdminTradingUserLeverageRow,
+  AdminTradingUserLeverageResponse,
+  PaginationInfo
 } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 
@@ -83,6 +85,19 @@ const toNumber = (value: number | string | null | undefined, fallback = 0) => {
   return Number.isFinite(numeric) ? numeric : fallback
 }
 
+const formatDateTime = (value?: string | null) => {
+  if (!value) {
+    return "—"
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return "—"
+  }
+
+  return parsed.toLocaleString()
+}
+
 const defaultEditingState = (symbol: AdminSymbolChargeRow): EditingSymbolState => ({
   commissionPerLot: symbol.commissionPerLot.toString(),
   swapLong: symbol.swapLong.toString(),
@@ -93,6 +108,8 @@ const defaultEditingState = (symbol: AdminSymbolChargeRow): EditingSymbolState =
 })
 
 type LoadMode = "initial" | "refresh"
+
+const LEVERAGE_OPTIONS = ["100", "200", "500", "1000", "2000"] as const
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) {
@@ -129,6 +146,17 @@ function TradesChargesContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [editingSymbolId, setEditingSymbolId] = useState<number | null>(null)
   const [editedSymbolValues, setEditedSymbolValues] = useState<EditingSymbolState | null>(null)
+  const [userLeverageRows, setUserLeverageRows] = useState<AdminTradingUserLeverageRow[]>([])
+  const [userLeverageLoading, setUserLeverageLoading] = useState(false)
+  const [userLeverageFilter, setUserLeverageFilter] = useState<string>("all")
+  const [userLeverageSearchInput, setUserLeverageSearchInput] = useState("")
+  const [userLeverageSearch, setUserLeverageSearch] = useState("")
+  const [userLeveragePagination, setUserLeveragePagination] = useState<PaginationInfo | null>(null)
+  const [userLeveragePage, setUserLeveragePage] = useState(1)
+  const [editingUserLeverageId, setEditingUserLeverageId] = useState<number | null>(null)
+  const [editingUserLeverageValue, setEditingUserLeverageValue] = useState<string>("100")
+  const [updatingUserLeverageId, setUpdatingUserLeverageId] = useState<number | null>(null)
+  const [userLeverageError, setUserLeverageError] = useState<string | null>(null)
 
   const loadData = useCallback(async (mode: LoadMode = "initial") => {
     if (mode === "initial") {
@@ -175,9 +203,126 @@ function TradesChargesContent() {
     }
   }, [toast])
 
+  const loadUserLeverage = useCallback(
+    async (page = 1) => {
+      setUserLeverageLoading(true)
+      if (page === 1) {
+        setUserLeverageError(null)
+      }
+
+      try {
+        const response = await adminService.getTradingUsersByLeverage({
+          leverage: userLeverageFilter === "all" ? undefined : Number(userLeverageFilter),
+          search: userLeverageSearch.trim() ? userLeverageSearch.trim() : undefined,
+          page,
+          limit: 25
+        })
+
+        if (!response.success || !response.data) {
+          throw new Error(response.message || "Failed to fetch user leverage data")
+        }
+
+        const data: AdminTradingUserLeverageResponse = response.data
+        setUserLeverageRows(Array.isArray(data.rows) ? data.rows : [])
+        setUserLeveragePagination(data.pagination ?? null)
+        setUserLeveragePage(page)
+      } catch (error: unknown) {
+        const message = getErrorMessage(error, "Unable to load user leverage data")
+        setUserLeverageError(message)
+        toast({
+          title: "Failed to load user leverage",
+          description: message,
+          variant: "destructive"
+        })
+      } finally {
+        setUserLeverageLoading(false)
+      }
+    },
+    [toast, userLeverageFilter, userLeverageSearch]
+  )
+
   useEffect(() => {
     loadData("initial")
   }, [loadData])
+
+  useEffect(() => {
+    loadUserLeverage(1)
+  }, [loadUserLeverage])
+
+  const handleUserLeverageFilterChange = (value: string) => {
+    setUserLeverageFilter(value)
+    setUserLeveragePage(1)
+  }
+
+  const handleApplyUserLeverageSearch = () => {
+    setUserLeverageSearch(userLeverageSearchInput.trim())
+    setUserLeveragePage(1)
+  }
+
+  const handleResetUserLeverageFilters = () => {
+    setUserLeverageFilter("all")
+    setUserLeverageSearch("")
+    setUserLeverageSearchInput("")
+    setUserLeveragePage(1)
+  }
+
+  const handleUserLeveragePageChange = (newPage: number) => {
+    loadUserLeverage(newPage)
+  }
+
+  const startEditingUserLeverage = (row: AdminTradingUserLeverageRow) => {
+    setEditingUserLeverageId(row.userId)
+    setEditingUserLeverageValue(String(row.preferredLeverage || 100))
+  }
+
+  const cancelEditingUserLeverage = () => {
+    setEditingUserLeverageId(null)
+    setEditingUserLeverageValue("100")
+  }
+
+  const handleSaveUserLeverage = async (userId: number) => {
+    const numericLeverage = Number(editingUserLeverageValue)
+    if (!Number.isFinite(numericLeverage)) {
+      toast({
+        title: "Invalid leverage value",
+        description: "Please choose a valid leverage option before saving.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setUpdatingUserLeverageId(userId)
+
+    try {
+      const response = await adminService.updateTradingUserLeverage(userId, {
+        preferredLeverage: numericLeverage
+      })
+
+      if (!response.success || !response.data) {
+        throw new Error(response.message || "Failed to update user leverage")
+      }
+
+      const updatedRow = response.data as AdminTradingUserLeverageRow
+      setUserLeverageRows((previous) =>
+        previous.map((row) => (row.userId === userId ? updatedRow : row))
+      )
+
+      toast({
+        title: "Leverage updated",
+        description: "User leverage preferences were saved successfully."
+      })
+
+      cancelEditingUserLeverage()
+    } catch (error: unknown) {
+      toast({
+        title: "Failed to update leverage",
+        description: getErrorMessage(error, "Unable to update the user's leverage."),
+        variant: "destructive"
+      })
+    } finally {
+      setUpdatingUserLeverageId(null)
+    }
+  }
 
   const stats = useMemo(() => {
     if (!symbols.length) {
@@ -513,8 +658,8 @@ function TradesChargesContent() {
                       <span>Brokerage</span>
                     </TabsTrigger>
                     <TabsTrigger value="leverage" className="flex items-center space-x-2">
-                      <Shield className="h-4 w-4" />
-                      <span>Leverage</span>
+                      <Users className="h-4 w-4" />
+                      <span>User Leverage</span>
                     </TabsTrigger>
                   </TabsList>
                 </CardHeader>
@@ -825,59 +970,247 @@ function TradesChargesContent() {
                   <TabsContent value="leverage" className="space-y-6">
                     <div>
                       <h3 className="text-xl font-semibold text-foreground flex items-center">
-                        <Shield className="h-5 w-5 mr-2" />
-                        Leverage Policies
+                        <Users className="h-5 w-5 mr-2" />
+                        User Leverage Management
                       </h3>
                       <p className="text-sm text-muted-foreground mt-1">
-                        Set default and maximum leverage limits for newly created trading accounts
+                        Review leverage preferences and adjust individual users when required.
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <Card className="bg-background/50 border-border/20">
-                        <CardHeader>
-                          <CardTitle className="text-lg text-foreground">Default Leverage</CardTitle>
-                          <p className="text-sm text-muted-foreground">Applied when new accounts are created</p>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="demo-leverage" className="text-sm font-medium text-foreground">
-                              Default leverage ratio
-                            </Label>
-                            <Input
-                              id="demo-leverage"
-                              value={demoLeverage}
-                              onChange={(event) => setDemoLeverage(event.target.value)}
-                              className="bg-background/60 border-border/20"
-                              placeholder="100"
-                            />
-                            <p className="text-xs text-muted-foreground">Displayed to users as 1:{demoLeverage || "100"}</p>
+                    <Card className="bg-background/50 border-border/20">
+                      <CardContent className="space-y-6">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                            <div className="sm:w-48">
+                              <Label className="text-sm font-medium text-foreground">Leverage filter</Label>
+                              <Select value={userLeverageFilter} onValueChange={handleUserLeverageFilterChange}>
+                                <SelectTrigger className="bg-background/60 border-border/20">
+                                  <SelectValue placeholder="All leverage" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="all">All leverage</SelectItem>
+                                  {LEVERAGE_OPTIONS.map((option) => (
+                                    <SelectItem key={option} value={option}>
+                                      {`1:${option}`}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="sm:w-64">
+                              <Label className="text-sm font-medium text-foreground">Search</Label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={userLeverageSearchInput}
+                                  onChange={(event) => setUserLeverageSearchInput(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault()
+                                      handleApplyUserLeverageSearch()
+                                    }
+                                  }}
+                                  placeholder="Search by name or email"
+                                  className="bg-background/60 border-border/20"
+                                />
+                                <Button onClick={handleApplyUserLeverageSearch} variant="secondary">
+                                  <Search className="mr-2 h-4 w-4" />
+                                  Apply
+                                </Button>
+                              </div>
+                            </div>
                           </div>
-                        </CardContent>
-                      </Card>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              onClick={handleResetUserLeverageFilters}
+                              className="text-muted-foreground"
+                            >
+                              Reset
+                            </Button>
+                            <Button variant="outline" onClick={() => loadUserLeverage(userLeveragePage)}>
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Refresh
+                            </Button>
+                          </div>
+                        </div>
 
-                      <Card className="bg-background/50 border-border/20">
-                        <CardHeader>
-                          <CardTitle className="text-lg text-foreground">Maximum Leverage</CardTitle>
-                          <p className="text-sm text-muted-foreground">Upper limit enforced on account creation</p>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="live-leverage" className="text-sm font-medium text-foreground">
-                              Maximum leverage ratio
-                            </Label>
-                            <Input
-                              id="live-leverage"
-                              value={liveLeverage}
-                              onChange={(event) => setLiveLeverage(event.target.value)}
-                              className="bg-background/60 border-border/20"
-                              placeholder="500"
-                            />
-                            <p className="text-xs text-muted-foreground">Displayed to users as 1:{liveLeverage || "500"}</p>
+                        {userLeverageError ? (
+                          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                            {userLeverageError}
                           </div>
-                        </CardContent>
-                      </Card>
-                    </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="overflow-x-auto rounded-lg border border-border/20">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="bg-muted/40">
+                                    <TableHead className="min-w-[180px] text-foreground">User</TableHead>
+                                    <TableHead className="min-w-[140px] text-foreground">Preferred leverage</TableHead>
+                                    <TableHead className="min-w-[240px] text-foreground">Trading accounts</TableHead>
+                                    <TableHead className="min-w-[160px] text-foreground">Last updated</TableHead>
+                                    <TableHead className="min-w-[140px]" />
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {userLeverageLoading ? (
+                                    <TableRow>
+                                      <TableCell colSpan={5}>
+                                        <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                          Loading user leverage…
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ) : userLeverageRows.length === 0 ? (
+                                    <TableRow>
+                                      <TableCell colSpan={5}>
+                                        <div className="p-6 text-center text-sm text-muted-foreground">
+                                          No users matched the current filters.
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ) : (
+                                    userLeverageRows.map((row) => {
+                                      const isEditing = editingUserLeverageId === row.userId
+                                      const currentLeverage = String(row.preferredLeverage ?? "100")
+                                      const accounts = Array.isArray(row.accounts) ? row.accounts : []
+
+                                      return (
+                                        <TableRow key={row.userId} className="hover:bg-muted/30">
+                                          <TableCell>
+                                            <div className="flex flex-col">
+                                              <span className="font-medium text-foreground">{row.name || row.email}</span>
+                                              <span className="text-xs text-muted-foreground">{row.email}</span>
+                                            </div>
+                                          </TableCell>
+                                          <TableCell>
+                                            {isEditing ? (
+                                              <Select
+                                                value={editingUserLeverageValue}
+                                                onValueChange={setEditingUserLeverageValue}
+                                              >
+                                                <SelectTrigger className="bg-background/60 border-border/20">
+                                                  <SelectValue placeholder="Select leverage" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  {LEVERAGE_OPTIONS.map((option) => (
+                                                    <SelectItem key={option} value={option}>
+                                                      {`1:${option}`}
+                                                    </SelectItem>
+                                                  ))}
+                                                </SelectContent>
+                                              </Select>
+                                            ) : (
+                                              <Badge variant="secondary" className="px-2 py-1 text-xs font-semibold">
+                                                {`1:${currentLeverage}`}
+                                              </Badge>
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            {accounts.length ? (
+                                              <div className="flex flex-wrap gap-2">
+                                                {accounts.map((account) => (
+                                                  <Badge key={account.accountId} variant="outline" className="text-xs font-medium">
+                                                    {account.accountNumber} · 1:{account.leverage}
+                                                  </Badge>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <span className="text-xs text-muted-foreground">No linked accounts</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-sm text-muted-foreground">
+                                            {formatDateTime(row.updatedAt)}
+                                          </TableCell>
+                                          <TableCell>
+                                            <div className="flex items-center justify-end gap-2">
+                                              {isEditing ? (
+                                                <>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={cancelEditingUserLeverage}
+                                                    disabled={updatingUserLeverageId === row.userId}
+                                                  >
+                                                    Cancel
+                                                  </Button>
+                                                  <Button
+                                                    size="sm"
+                                                    onClick={() => handleSaveUserLeverage(row.userId)}
+                                                    disabled={updatingUserLeverageId === row.userId}
+                                                  >
+                                                    {updatingUserLeverageId === row.userId ? (
+                                                      <>
+                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                        Saving
+                                                      </>
+                                                    ) : (
+                                                      <>
+                                                        <Save className="mr-2 h-4 w-4" />
+                                                        Save
+                                                      </>
+                                                    )}
+                                                  </Button>
+                                                </>
+                                              ) : (
+                                                <Button variant="outline" size="sm" onClick={() => startEditingUserLeverage(row)}>
+                                                  <Edit className="mr-2 h-4 w-4" />
+                                                  Edit
+                                                </Button>
+                                              )}
+                                            </div>
+                                          </TableCell>
+                                        </TableRow>
+                                      )
+                                    })
+                                  )}
+                                </TableBody>
+                              </Table>
+                            </div>
+
+                            {userLeveragePagination && userLeveragePagination.pages > 1 ? (
+                              <div className="flex items-center justify-between border-t border-border/20 pt-4 text-sm text-muted-foreground">
+                                <span>
+                                  Page {userLeveragePagination.page} of {userLeveragePagination.pages}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleUserLeveragePageChange(
+                                        Math.max(1, (userLeveragePagination?.page || 1) - 1)
+                                      )
+                                    }
+                                    disabled={(userLeveragePagination?.page || 1) <= 1 || userLeverageLoading}
+                                  >
+                                    Previous
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleUserLeveragePageChange(
+                                        Math.min(
+                                          userLeveragePagination.pages,
+                                          (userLeveragePagination?.page || 1) + 1
+                                        )
+                                      )
+                                    }
+                                    disabled={
+                                      (userLeveragePagination?.page || 1) >= userLeveragePagination.pages || userLeverageLoading
+                                    }
+                                  >
+                                    Next
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
                   </TabsContent>
                 </CardContent>
               </Tabs>

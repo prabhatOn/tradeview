@@ -12,6 +12,7 @@ class User {
     this.status = data.status;
     this.emailVerified = data.email_verified;
     this.kycStatus = data.kyc_status;
+    this.preferredLeverage = data.preferred_leverage;
     this.createdAt = data.created_at;
     this.updatedAt = data.updated_at;
     this.lastLogin = data.last_login;
@@ -25,6 +26,7 @@ class User {
       firstName,
       lastName,
       phone,
+      preferredLeverage = 100,
       status = 'active',
       emailVerified = false,
       kycStatus = 'pending'
@@ -44,8 +46,9 @@ class User {
         phone,
         status,
         email_verified,
-        kyc_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        kyc_status,
+        preferred_leverage
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         email,
         hashedPassword,
@@ -54,7 +57,8 @@ class User {
         phone || null,
         status,
         emailVerified ? 1 : 0,
-        kycStatus
+        kycStatus,
+        preferredLeverage
       ]
     );
 
@@ -70,8 +74,8 @@ class User {
       `INSERT INTO trading_accounts (
         user_id, account_number, account_type, currency, leverage, 
         balance, equity, free_margin, status
-      ) VALUES (?, ?, 'demo', 'USD', 100, 100000.00, 100000.00, 100000.00, 'active')`,
-      [userId, accountNumber]
+      ) VALUES (?, ?, 'demo', 'USD', ?, 100000.00, 100000.00, 100000.00, 'active')`,
+      [userId, accountNumber, preferredLeverage]
     );
 
     return user;
@@ -193,6 +197,7 @@ class User {
       status: this.status,
       emailVerified: this.emailVerified,
       kycStatus: this.kycStatus,
+      preferredLeverage: this.preferredLeverage,
       roles: roles,
       role: roles.length > 0 ? roles[0] : 'user', // Primary role for frontend compatibility
       tradingAccountsCount: this.tradingAccountsCount || 0,

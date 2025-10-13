@@ -40,6 +40,9 @@ import {
   AdminUpdateSymbolChargePayload,
   AdminBrokerageUpdatePayload,
   AdminLeverageUpdatePayload,
+  AdminTradingUserLeverageResponse,
+  AdminTradingUserLeverageRow,
+  AdminUpdateUserLeveragePayload,
   PaymentGateway,
   BankAccount,
   FundingMethodsPayload
@@ -375,6 +378,36 @@ export const adminService = {
 
   updateTradingLeverageSettings: (payload: AdminLeverageUpdatePayload): Promise<ApiResponse<AdminTradingLeverageSettings>> =>
     apiClient.patch('/admin/trading/charges/leverage', payload),
+
+  getTradingUsersByLeverage: async (params: {
+    leverage?: number;
+    search?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<ApiResponse<AdminTradingUserLeverageResponse>> => {
+    try {
+      return await apiClient.get('/admin/trading/charges/users', params);
+    } catch (error) {
+      if (error instanceof Error && error.message?.includes('404')) {
+        return apiClient.get('/admin/trading/users/leverage', params);
+      }
+      throw error;
+    }
+  },
+
+  updateTradingUserLeverage: async (
+    userId: number,
+    payload: AdminUpdateUserLeveragePayload
+  ): Promise<ApiResponse<AdminTradingUserLeverageRow>> => {
+    try {
+      return await apiClient.patch(`/admin/trading/charges/users/${userId}/leverage`, payload);
+    } catch (error) {
+      if (error instanceof Error && error.message?.includes('404')) {
+        return apiClient.patch(`/admin/users/${userId}/leverage`, payload);
+      }
+      throw error;
+    }
+  },
 
   getTradingPositions: (params: {
     status?: 'open' | 'closed' | 'all';
