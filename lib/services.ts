@@ -337,6 +337,12 @@ export const adminService = {
   updateUserVerification: (id: number, payload: AdminUpdateVerificationPayload): Promise<ApiResponse<void>> =>
     apiClient.patch(`/admin/users/${id}/verification`, payload),
 
+  approveIb: (userId: number): Promise<ApiResponse<any>> =>
+    apiClient.post('/introducing-broker/admin/approve', { userId }),
+
+  revokeIb: (userId: number): Promise<ApiResponse<any>> =>
+    apiClient.post('/introducing-broker/admin/revoke', { userId }),
+
   createUser: (payload: AdminCreateUserPayload): Promise<ApiResponse<{ user: User }>> =>
     apiClient.post('/admin/users', payload),
 
