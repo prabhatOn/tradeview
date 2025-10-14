@@ -287,15 +287,6 @@ const formatDateTime = (value?: string | null) => {
 // --- REUSABLE ROW COMPONENTS ---
 const ClientRow: FC<{ client: Client; onViewDetails: (client: Client) => void }> = ({ client, onViewDetails }) => {
   const { toast } = useToast();
-  const getCommissionColor = (status: string) => status === 'inactive' ? 'text-red-500' : 'text-emerald-500';
-  const getTierBadgeColor = (tier: string) => {
-    switch (tier) {
-      case 'Gold': return 'border-yellow-400/50 bg-yellow-400/10 text-yellow-400';
-      case 'Silver': return 'border-gray-400/50 bg-gray-400/10 text-gray-400';
-      case 'Platinum': return 'border-blue-400/50 bg-blue-400/10 text-blue-400';
-      default: return 'bg-muted/20 text-muted-foreground';
-    }
-  };
 
   return (
     <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-card/80 p-4 transition-colors duration-200 hover:bg-muted/20">
@@ -334,11 +325,18 @@ const ClientRow: FC<{ client: Client; onViewDetails: (client: Client) => void }>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"><EllipsisVertical size={16} /></Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+              <EllipsisVertical size={16} />
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => onViewDetails(client)}>View Details</DropdownMenuItem>
-            <DropdownMenuItem className="text-red-500" onClick={() => toast({ title: 'Remove Client', description: `Removing ${client.clientName}` })}>Remove</DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-red-500"
+              onClick={() => toast({ title: 'Remove Client', description: `Removing ${client.clientName}` })}
+            >
+              Remove
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button variant="outline" size="sm" className="hidden xl:flex" onClick={() => onViewDetails(client)}>
@@ -398,6 +396,7 @@ export default function IntroducingBrokerPageV2() {
   });
   const [commissionRate, setCommissionRate] = useState('0.0070');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
   const [referralCodes, setReferralCodes] = useState<ReferralCode[]>([]);
   const [referralLoading, setReferralLoading] = useState(false);
   const [isGeneratingReferral, setIsGeneratingReferral] = useState(false);
@@ -636,15 +635,28 @@ export default function IntroducingBrokerPageV2() {
   };
 
   const fetchIbData = useCallback(async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       const statusResp = await apiClient.get<IbStatusResponse>('/introducing-broker/status');
       if (statusResp.success && statusResp.data) {
-        setIbStatus(statusResp.data);
-        await loadReferralCodes(statusResp.data.isIB);
+        const statusData = statusResp.data;
+        setIbStatus(statusData);
+        await loadReferralCodes(statusData.isIB);
+
+        if (!statusData.isIB) {
+          setDashboardData(null);
+          return;
+        }
       } else {
         setIbStatus(null);
+        setDashboardData(null);
         setReferralCodes([]);
+        toast({
+          title: "Error",
+          description: 'Failed to resolve IB status',
+          variant: 'destructive'
+        });
+        return;
       }
 
       const response = await apiClient.get<IbDashboardData>('/introducing-broker/dashboard');
@@ -807,6 +819,29 @@ export default function IntroducingBrokerPageV2() {
     }
   };
 
+  const handleApplyForIb = useCallback(async () => {
+    if (isApplying) return;
+    setIsApplying(true);
+    try {
+      const response = await apiClient.post('/introducing-broker/apply');
+      if (response.success) {
+        toast({
+          title: 'Application submitted',
+          description: 'We\'ll notify you once an admin reviews your IB request.',
+        });
+        await fetchIbData();
+      } else {
+        const message = extractErrorMessage(response, 'Unable to submit IB application');
+        toast({ title: 'Error', description: message, variant: 'destructive' });
+      }
+    } catch (error) {
+      const message = extractErrorMessage(error, 'Unable to submit IB application');
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setIsApplying(false);
+    }
+  }, [fetchIbData, isApplying, toast]);
+
   const filteredClients = useMemo(() => (
     dashboardData?.clients?.filter(client => {
       const matchesSearch = client.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -919,17 +954,84 @@ export default function IntroducingBrokerPageV2() {
   }
 
   if (!ibStatus?.isIB) {
+    const applicationStatus = ibStatus?.applicationStatus ?? 'not_applied';
+    const statusCopy = {
+      not_applied: {
+        label: 'Not applied',
+        description: 'Unlock enhanced earnings by referring traders to the platform.',
+        helper: 'Submit an application to join the Introducing Broker program. Our team will review it shortly.',
+        badgeVariant: 'outline' as const,
+      },
+      pending: {
+        label: 'Pending review',
+        description: 'Your application is currently awaiting review.',
+        helper: 'We will notify you via email and in-app notifications once a decision has been made.',
+        badgeVariant: 'secondary' as const,
+      },
+      approved: {
+        label: 'Approved',
+        description: 'Your application has been approved. Access will be enabled shortly.',
+        helper: 'If you still see this screen, please refresh or contact support for assistance.',
+        badgeVariant: 'secondary' as const,
+      },
+      rejected: {
+        label: 'Rejected',
+        description: 'Your previous application was not approved.',
+        helper: 'You can update your profile details and apply again for reconsideration.',
+        badgeVariant: 'destructive' as const,
+      },
+    } satisfies Record<string, {
+      label: string;
+      description: string;
+      helper: string;
+      badgeVariant: 'outline' | 'secondary' | 'destructive';
+    }>;
+
+    const statusMeta = statusCopy[applicationStatus] ?? statusCopy.not_applied;
+    const canApply = applicationStatus === 'not_applied' || applicationStatus === 'rejected';
+
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center text-muted-foreground">
-        <div className="max-w-md space-y-3">
-          <h2 className="text-2xl font-semibold text-foreground">IB Access Required</h2>
-          <p className="text-sm">
-            Your account does not have Introducing Broker access yet. Please contact support or your account manager to request IB privileges.
-          </p>
+      <div className="flex min-h-screen bg-muted/20">
+        <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
+        <Toaster />
+        <div className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6 lg:px-12">
+          <Card className="w-full max-w-xl border border-border/60 bg-card/90 shadow-xl">
+            <CardHeader className="space-y-2">
+              <CardTitle className="text-2xl font-semibold text-foreground">Introducing Broker Program</CardTitle>
+              <CardDescription>{statusMeta.description}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Application status</p>
+                  <p className="text-lg font-semibold text-foreground capitalize">{statusMeta.label}</p>
+                </div>
+                <Badge variant={statusMeta.badgeVariant} className="capitalize">
+                  {statusMeta.label}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">{statusMeta.helper}</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={() => void handleApplyForIb()}
+                  disabled={!canApply || isApplying}
+                  className="min-w-[180px]"
+                >
+                  {isApplying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {canApply ? 'Apply for IB access' : 'Application in review'}
+                </Button>
+                <Button variant="outline" onClick={() => window.location.assign('/profile')}>
+                  Update profile
+                </Button>
+              </div>
+              <Alert>
+                <AlertDescription>
+                  Need help? Contact support or your account manager for expedited review.
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
         </div>
-        <Button onClick={() => window.location.assign('/profile')}>
-          Go to Profile
-        </Button>
       </div>
     );
   }

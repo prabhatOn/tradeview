@@ -20,7 +20,8 @@ const WebSocket = require('ws');
 const cron = require('node-cron');
 
 // Import configurations and middleware
-const { initializeDatabase } = require('./config/database');
+const database = require('./config/database');
+const { initializeDatabase } = database;
 const { ensurePositionsCloseColumns } = require('./utils/schemaMaintenance');
 const { authMiddleware } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');

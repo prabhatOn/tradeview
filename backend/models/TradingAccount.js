@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const { executeQuery, executeTransaction } = require('../config/database');
 
 class TradingAccount {
@@ -129,7 +131,7 @@ class TradingAccount {
     const unrealizedPnL = await this.getUnrealizedPnL();
     const equity = this.balance + unrealizedPnL;
     const freeMargin = equity; // Simplified: free margin = equity (no margin calculation)
-    const marginLevel = 0; // Simplified: not calculating margin level
+  const marginLevel = 0; // Simplified: not calculating margin level
 
     await executeQuery(
       'UPDATE trading_accounts SET equity = ?, free_margin = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -138,7 +140,8 @@ class TradingAccount {
 
     this.equity = equity;
     this.freeMargin = freeMargin;
-    this.updatedAt = new Date();
+  this.marginLevel = marginLevel;
+  this.updatedAt = new Date();
   }
 
   // Convert to JSON for API responses

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const { executeQuery } = require('../config/database');
 const FundManager = require('./FundManager');
 const Position = require('../models/Position');

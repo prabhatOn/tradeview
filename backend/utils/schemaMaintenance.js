@@ -76,4 +76,4 @@ async function ensurePositionsCloseColumns() {
   }
 }
 
-module.exports = { ensurePositionsCloseColumns }
+module.exports = { ensurePositionsCloseColumns };

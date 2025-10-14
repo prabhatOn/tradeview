@@ -1,8 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const Joi = require('joi');
-const { executeQuery } = require('../config/database');
-const { asyncHandler, AppError } = require('../middleware/errorHandler');
+const { executeQuery } = require('../config/database.js');
+const { asyncHandler, AppError } = require('../middleware/errorHandler.js');
 
 const router = express.Router();
 

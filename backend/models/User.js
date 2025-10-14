@@ -1,6 +1,8 @@
-import { executeQuery, executeTransactionQueries } from '../config/database';
-import bcrypt from 'bcryptjs';
-import TradingAccount from './TradingAccount';
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
+const { executeQuery } = require('../config/database');
+const bcrypt = require('bcryptjs');
+const TradingAccount = require('./TradingAccount');
 
 class User {
   constructor(data) {
@@ -208,4 +210,4 @@ class User {
   }
 }
 
-export default User;
+module.exports = User;

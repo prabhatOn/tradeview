@@ -1,9 +1,11 @@
-import { executeQuery } from '../config/database';
-import NotificationService from './NotificationService';
-import Position from '../models/Position';
-import TradingAccount from '../models/TradingAccount';
-import TradeHistory from '../models/TradeHistory';
-import IntroducingBrokerService from './IntroducingBrokerService';
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-var-requires */
+const { executeQuery } = require('../config/database');
+const NotificationService = require('./NotificationService');
+const Position = require('../models/Position');
+const TradingAccount = require('../models/TradingAccount');
+const TradeHistory = require('../models/TradeHistory');
+const IntroducingBrokerService = require('./IntroducingBrokerService');
 
 class TradingService {
   // Update all positions for a symbol with new market prices
