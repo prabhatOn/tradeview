@@ -30,18 +30,13 @@ interface ApiKey {
 }
 
 function CreateKeyForm({ onCreate }: { onCreate: (keyData: any) => void }) {
-  const [allowedIps, setAllowedIps] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     setIsLoading(true)
     try {
-      const keyData = {
-        ipWhitelist: allowedIps ? allowedIps.split(',').map(ip => ip.trim()) : []
-      }
-      await onCreate(keyData)
+      await onCreate({})
     } catch (error) {
       console.error('Error creating API key:', error)
     } finally {
@@ -59,23 +54,8 @@ function CreateKeyForm({ onCreate }: { onCreate: (keyData: any) => void }) {
         </p>
       </div>
 
-      <div>
-        <label className="text-sm text-muted-foreground">Allowed IPs (optional)</label>
-        <UiInput 
-          value={allowedIps} 
-          onChange={(e) => setAllowedIps(e.target.value)} 
-          className="mt-2"
-          placeholder="192.168.1.1, 10.0.0.1 (comma-separated)"
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          Leave empty to allow access from any IP address.
-        </p>
-      </div>
-
       <div className="flex justify-end gap-2">
-        <DialogClose asChild>
-          <Button variant="ghost" disabled={isLoading}>Cancel</Button>
-        </DialogClose>
+        <Button type="button" variant="outline" onClick={() => onCreate(null)} disabled={isLoading}>Cancel</Button>
         <Button type="submit" disabled={isLoading}>
           {isLoading ? 'Creating...' : 'Create Personal API Key'}
         </Button>
@@ -92,6 +72,7 @@ export default function ApiAccessPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [newKeyCredentials, setNewKeyCredentials] = useState<{key_id: string, secret_key: string} | null>(null)
+  const [showSecretInDetails, setShowSecretInDetails] = useState(false) // Track if we should show secret in details
   const { toast } = useToast()
 
   // Load API key on component mount
@@ -134,6 +115,7 @@ export default function ApiAccessPage() {
           key_id: response.data.key_id,
           secret_key: response.data.secret_key
         })
+        setShowSecretInDetails(true) // Allow viewing secret in details temporarily
         
         await loadApiKey()
         setCreateOpen(false)
@@ -821,6 +803,19 @@ getPositions();`}</code>
           )}
         </main>
 
+        {/* Create API Key Dialog */}
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create Personal API Key</DialogTitle>
+              <DialogDescription>
+                Generate your personal trading API key for automated operations.
+              </DialogDescription>
+            </DialogHeader>
+            <CreateKeyForm onCreate={handleCreate} />
+          </DialogContent>
+        </Dialog>
+
         {/* API Key Details Dialog */}
         {apiKey && (
           <Dialog open={viewKey} onOpenChange={setViewKey}>
@@ -845,15 +840,12 @@ getPositions();`}</code>
                 <div>
                   <label className="text-sm font-medium">Secret Key</label>
                   <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                    <Input readOnly value="••••••••••••••••••••••••••••••••" className="flex-1 text-xs sm:text-sm" />
-                    <Button variant="outline" disabled title="Secret key is hidden for security" className="shrink-0">
-                      <Eye className="h-4 w-4" />
-                      <span className="ml-2 hidden sm:inline">Hidden</span>
+                    <Input readOnly value={apiKey?.secret_key || ''} className="flex-1 text-xs sm:text-sm" />
+                    <Button variant="outline" onClick={() => handleCopy(apiKey?.secret_key || '', 'Secret Key')} className="shrink-0">
+                      <Clipboard className="h-4 w-4" />
+                      <span className="ml-2 hidden sm:inline">Copy</span>
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Secret key is only shown once during creation for security reasons.
-                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
@@ -873,16 +865,6 @@ getPositions();`}</code>
                     <span className="ml-2">{formatLastUsed(apiKey.last_used_at)}</span>
                   </div>
                 </div>
-                {apiKey.allowed_ips && apiKey.allowed_ips.length > 0 && (
-                  <div>
-                    <span className="text-sm font-medium">Allowed IPs:</span>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {apiKey.allowed_ips.map((ip: string) => (
-                        <Badge key={ip} variant="outline" className="text-xs">{ip}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="flex justify-end gap-2">
                 <DialogClose asChild>
@@ -926,7 +908,7 @@ getPositions();`}</code>
                 API Key Created Successfully
               </DialogTitle>
               <DialogDescription>
-                <strong>Important:</strong> Save these credentials now. The secret key cannot be viewed again.
+                Your API key has been created successfully. You can view both the Key ID and Secret Key anytime.
               </DialogDescription>
             </DialogHeader>
             
@@ -952,9 +934,6 @@ getPositions();`}</code>
                       <span className="ml-2 hidden sm:inline">Copy</span>
                     </Button>
                   </div>
-                  <p className="text-xs text-amber-600 mt-2">
-                    ⚠️ Copy this secret key now. You won't be able to see it again!
-                  </p>
                 </div>
 
                 <div className="bg-muted/50 p-3 sm:p-4 rounded-lg">

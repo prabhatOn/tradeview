@@ -42,6 +42,7 @@ router.get('/', asyncHandler(async (req, res) => {
     SELECT 
       id,
       api_key,
+      api_secret,
       is_active,
       last_used_at,
       expires_at,
@@ -62,30 +63,22 @@ router.get('/', asyncHandler(async (req, res) => {
     });
   }
 
-  // Handle IP whitelist - MySQL might return it as string or already parsed array
-  let ipWhitelist = [];
-  try {
-    if (apiKey.ip_whitelist === null || apiKey.ip_whitelist === undefined) {
-      ipWhitelist = [];
-    } else if (typeof apiKey.ip_whitelist === 'string') {
-      ipWhitelist = apiKey.ip_whitelist.trim() === '' ? [] : JSON.parse(apiKey.ip_whitelist);
-    } else if (Array.isArray(apiKey.ip_whitelist)) {
-      ipWhitelist = apiKey.ip_whitelist;
-    } else {
-      ipWhitelist = [];
-    }
-  } catch (error) {
-    console.log('Error parsing IP whitelist, using empty array:', error.message);
-    ipWhitelist = [];
-  }
+  // Remove IP whitelist logic: always allow any IP
+  const ipWhitelist = [];
 
+
+  console.log('DEBUG: Returning API key details:', {
+    key_id: apiKey.api_key,
+    secret_key: apiKey.api_secret,
+    status: apiKey.is_active ? 'active' : 'inactive',
+    permissions: ['read', 'trade']
+  });
   const formattedKey = {
     ...apiKey,
     key_id: apiKey.api_key,
-    secret_key: '••••••••••••••••••••••••••••••••••••••••••••••••••••••••',
+    secret_key: apiKey.api_secret, // Show actual secret
     status: apiKey.is_active ? 'active' : 'inactive',
-    permissions: ['read', 'trade'], // Personal API keys have read and trade permissions
-    ip_whitelist: ipWhitelist
+    permissions: ['read', 'trade']
   };
 
   res.json({
@@ -106,11 +99,12 @@ router.post('/', asyncHandler(async (req, res) => {
     throw new AppError('You already have a personal API key. Only one API key per user is allowed.', 400);
   }
 
-  const { ipWhitelist = [] } = req.body;
+  // Remove IP whitelist logic: always allow any IP
+  const ipWhitelist = [];
 
   // Generate API credentials
   const { apiKey, apiSecret } = generateApiCredentials();
-  const hashedSecret = hashApiSecret(apiSecret);
+  console.log('DEBUG: Creating API key:', { apiKey, apiSecret });
 
   // Insert new personal API key with trading permissions
   const result = await executeQuery(`
@@ -127,10 +121,10 @@ router.post('/', asyncHandler(async (req, res) => {
     req.user.id,
     'Personal Trading API Key',
     apiKey,
-    hashedSecret,
+    apiSecret, // Store plain secret instead of hash
     JSON.stringify(['read', 'trade']), // Personal API keys have read and trade permissions
     5000, // Higher rate limit for personal trading API
-    JSON.stringify(ipWhitelist || [])
+    JSON.stringify([])
   ]);
 
   // Return the new API key (including secret - this is the only time it's shown)
@@ -143,7 +137,6 @@ router.post('/', asyncHandler(async (req, res) => {
       status: 'active',
       permissions: ['read', 'trade'],
       rate_limit: 5000,
-      ip_whitelist: ipWhitelist || [],
       message: 'IMPORTANT: Save your API secret now. You won\'t be able to see it again!'
     }
   });
