@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { AdminLayout } from "@/components/admin/admin-layout"
+import { adminSidebarItems, adminTopBarConfig } from '@/config/admin-config'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -13,13 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Activity,
-  LayoutDashboard,
   Users,
-  Receipt,
   TrendingUp,
-  HeadphonesIcon,
-  CreditCard,
-  Wallet,
   Search,
   Plus,
   Edit,
@@ -32,7 +28,7 @@ import {
   Calculator,
   Target,
   CheckCircle,
-  Loader2
+  Loader2,
 } from "lucide-react"
 import { adminService } from "@/lib/services"
 import {
@@ -45,23 +41,7 @@ import {
 } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 
-const adminSidebarItems = [
-  { title: "Overview", icon: LayoutDashboard, href: "/admin", description: "Dashboard overview and analytics" },
-  { title: "User Management", icon: Users, href: "/admin/users", description: "Manage users and accounts" },
-  { title: "Trades & Charges", icon: Receipt, href: "/admin/trades-charges", description: "Trading fees and charges" },
-  { title: "Trades", icon: TrendingUp, href: "/admin/trades", description: "Trading activities monitoring" },
-  { title: "Support Tickets", icon: HeadphonesIcon, href: "/admin/support", description: "Customer support management" },
-  { title: "Deposits/Withdrawals", icon: CreditCard, href: "/admin/deposits-withdrawals", description: "Transaction management" },
-  { title: "Payment Gateway", icon: Wallet, href: "/admin/payment-gateway", description: "Payment processing settings" }
-]
-
-const adminTopBarConfig = {
-  title: "Admin Portal",
-  showBalance: false,
-  showNotifications: true,
-  showDeposit: false,
-  showUserMenu: true
-}
+// sidebar and topbar come from shared config
 
 type EditingSymbolState = {
   commissionPerLot: string

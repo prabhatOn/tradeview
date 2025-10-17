@@ -5,7 +5,9 @@ import {
   TrendingUp,
   HeadphonesIcon,
   CreditCard,
+  Handshake,
   Wallet,
+  Coins,
 } from "lucide-react"
 import { SidebarItem, TopBarConfig } from "@/types/index"
 
@@ -13,7 +15,7 @@ export const adminSidebarItems: SidebarItem[] = [
   {
     title: "Overview",
     icon: LayoutDashboard,
-    href: "/admin/overview",
+    href: "/admin",
     description: "Dashboard overview and analytics"
   },
   {
@@ -45,6 +47,18 @@ export const adminSidebarItems: SidebarItem[] = [
     icon: CreditCard,
     href: "/admin/deposits-withdrawals",
     description: "Transaction management"
+  },
+  {
+    title: "Introducing Brokers",
+    icon: Handshake,
+    href: "/admin/introducing-brokers",
+    description: "Manage introducing broker relationships and shares"
+  },
+  {
+    title: "Symbol Management",
+    icon: Coins,
+    href: "/admin/symbols",
+    description: "Manage trading symbols and currency pairs"
   },
   {
     title: "Payment Gateway",

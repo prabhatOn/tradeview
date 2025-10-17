@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { TrendingUp, TrendingDown, Loader2 } from "lucide-react"
+import { Card } from "@/components/ui/card"
+import { TrendingUp, TrendingDown, Loader2, Calculator, AlertTriangle, Info } from "lucide-react"
 import { useTrading } from "@/contexts/TradingContext"
 import { useToast } from "@/hooks/use-toast"
+import { enhancedTradingService } from "@/lib/services"
 
 interface TradeDialogProps {
   symbol: string
@@ -27,13 +29,154 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
   const [stopLoss, setStopLoss] = useState("")
   const [takeProfit, setTakeProfit] = useState("")
   const [orderType, setOrderType] = useState("market")
+  const [limitPrice, setLimitPrice] = useState("")
+  const [tabValue, setTabValue] = useState<'market' | 'pending'>('market')
   const [isLoading, setIsLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
+  
+  // Phase 5 Enhancements: Leverage, margin, and risk calculations
+  const [selectedLeverage, setSelectedLeverage] = useState<number | null>(null)
+  const [leverageOptions, setLeverageOptions] = useState<number[]>([])
+  const [marginInfo, setMarginInfo] = useState<{
+    balance?: number
+    equity?: number
+    marginUsed?: number
+    freeMargin?: number
+    marginLevel?: number
+  } | null>(null)
+  const [riskAmount, setRiskAmount] = useState("")
 
   const { activeAccount, accounts, openPosition } = useTrading()
   const { toast } = useToast()
 
   const isBuy = type === "buy"
+  const currentPrice = parseFloat(price)
+  const lotSize = parseFloat(volume) || 0
+  const slPrice = parseFloat(stopLoss) || 0
+  const tpPrice = parseFloat(takeProfit) || 0
+
+  // Load leverage options and margin info when dialog opens
+  useEffect(() => {
+    if (isOpen && activeAccount?.id) {
+      loadLeverageOptions()
+      loadMarginInfo()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, activeAccount?.id])
+
+  // Update margin info when volume or leverage changes
+  useEffect(() => {
+    if (isOpen && activeAccount?.id && (lotSize > 0 || selectedLeverage)) {
+      loadMarginInfo()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lotSize, selectedLeverage, isOpen, activeAccount?.id])
+
+  const loadLeverageOptions = async () => {
+    try {
+      const response = await enhancedTradingService.getLeverageOptions()
+      const options = response.data || []
+      setLeverageOptions(options)
+      if (activeAccount && options.length > 0) {
+        setSelectedLeverage(activeAccount.leverage || options[0])
+      }
+    } catch (error) {
+      console.error('Failed to load leverage options:', error)
+    }
+  }
+
+  const loadMarginInfo = async () => {
+    if (!activeAccount?.id) return
+    try {
+      const response = await enhancedTradingService.getMarginInfo(activeAccount.id)
+      setMarginInfo(response.data)
+    } catch (error) {
+      console.error('Failed to load margin info:', error)
+    }
+  }
+
+  // Calculate required margin for this trade
+  const requiredMargin = useMemo(() => {
+    if (!lotSize || !currentPrice) return 0
+    const leverage = selectedLeverage || activeAccount?.leverage || 100
+    const contractSize = 100000 // Standard lot
+    const positionValue = lotSize * contractSize * currentPrice
+    return positionValue / leverage
+  }, [lotSize, currentPrice, selectedLeverage, activeAccount?.leverage])
+
+  // Calculate SL/TP in pips and risk amount
+  const slCalculation = useMemo(() => {
+    if (!slPrice || !currentPrice || !lotSize) return null
+    const pipValue = 10 // $10 per pip for 1 lot (standard)
+    const priceDiff = Math.abs(slPrice - currentPrice)
+    const pips = priceDiff * 10000 // For 4-digit pairs
+    const riskDollar = pips * pipValue * lotSize
+    return { pips: pips.toFixed(1), risk: riskDollar.toFixed(2) }
+  }, [slPrice, currentPrice, lotSize])
+
+  const tpCalculation = useMemo(() => {
+    if (!tpPrice || !currentPrice || !lotSize) return null
+    const pipValue = 10
+    const priceDiff = Math.abs(tpPrice - currentPrice)
+    const pips = priceDiff * 10000
+    const rewardDollar = pips * pipValue * lotSize
+    return { pips: pips.toFixed(1), reward: rewardDollar.toFixed(2) }
+  }, [tpPrice, currentPrice, lotSize])
+
+  // Calculate position size from risk amount
+  const calculatePositionFromRisk = () => {
+    if (!riskAmount || !slPrice || !currentPrice) {
+      toast({
+        title: "Missing Information",
+        description: "Please enter risk amount and stop loss to calculate position size",
+        variant: "destructive"
+      })
+      return
+    }
+    const risk = parseFloat(riskAmount)
+    const pipValue = 10
+    const priceDiff = Math.abs(slPrice - currentPrice)
+    const pips = priceDiff * 10000
+    if (pips === 0) {
+      toast({
+        title: "Invalid Stop Loss",
+        description: "Stop loss is too close to current price",
+        variant: "destructive"
+      })
+      return
+    }
+    const calculatedLots = risk / (pips * pipValue)
+    setVolume(calculatedLots.toFixed(2))
+    toast({
+      title: "Position Size Calculated",
+      description: `${calculatedLots.toFixed(2)} lots for $${risk} risk`,
+    })
+  }
+
+  // Estimate commission (simplified - should come from backend)
+  const estimatedCommission = useMemo(() => {
+    if (!lotSize) return 0
+    return lotSize * 7 // $7 per lot (example)
+  }, [lotSize])
+
+  // Estimate swap (simplified - should come from backend)
+  const estimatedSwap = useMemo(() => {
+    if (!lotSize) return 0
+    return lotSize * 0.5 // $0.50 per lot per day (example)
+  }, [lotSize])
+
+  // Check margin level after trade
+  const marginLevelAfterTrade = useMemo(() => {
+    if (!marginInfo || !requiredMargin) return null
+    const newMarginUsed = (marginInfo.marginUsed || 0) + requiredMargin
+    const equity = marginInfo.equity || marginInfo.balance || 0
+    if (newMarginUsed === 0) return 100
+    return (equity / newMarginUsed) * 100
+  }, [marginInfo, requiredMargin])
+
+  const wouldTriggerMarginCall = marginLevelAfterTrade && marginLevelAfterTrade < 50
+  const wouldTriggerStopOut = marginLevelAfterTrade && marginLevelAfterTrade < 20
+
 
   const handlePlaceOrder = async () => {
     if (!activeAccount && (!accounts || accounts.length === 0)) {
@@ -68,8 +211,18 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
         comment: `${type.toUpperCase()} ${symbol} - ${orderType} order via Trade Dialog`
       }
 
-      console.log('Placing order with data:', orderData)
-      await openPosition(orderData)
+      const trigger = orderType === 'limit'
+        ? (limitPrice && limitPrice.trim() ? parseFloat(limitPrice) : null)
+        : null
+
+      const requestData = {
+        ...orderData,
+        orderType: orderType || 'market',
+        triggerPrice: trigger
+      }
+
+      console.log('Placing order with data:', requestData)
+      await openPosition(requestData)
       
       toast({
         title: `${type.toUpperCase()} Order Executed`,
@@ -81,11 +234,15 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
       setVolume("0.01")
       setStopLoss("")
       setTakeProfit("")
-    } catch (error: any) {
+      setLimitPrice("")
+    } catch (error: unknown) {
       console.error('Order failed:', error)
+      let message = 'Failed to place order. Please try again.'
+      if (error instanceof Error) message = error.message
+      else if (typeof error === 'string') message = error
       toast({
         title: "Order Failed",
-        description: error.message || "Failed to place order. Please try again.",
+        description: message,
         variant: "destructive"
       })
     } finally {
@@ -119,21 +276,46 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
             </Badge>
           </div>
 
-          <Tabs defaultValue="market" className="w-full">
+          <Tabs value={tabValue} onValueChange={(v) => { setTabValue(v as 'market'|'pending'); setOrderType(v === 'pending' ? 'limit' : 'market') }} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="market">Market Order</TabsTrigger>
               <TabsTrigger value="pending">Pending Order</TabsTrigger>
             </TabsList>
 
             <TabsContent value="market" className="space-y-4 mt-4">
+              {/* Phase 5: Leverage Selector */}
+              <div className="space-y-2">
+                <Label htmlFor="leverage">Leverage</Label>
+                <Select 
+                  value={selectedLeverage?.toString() || ""} 
+                  onValueChange={(v) => setSelectedLeverage(parseInt(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select leverage" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {leverageOptions.map((lev) => (
+                      <SelectItem key={lev} value={lev.toString()}>
+                        1:{lev}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="volume">Volume (Lots)</Label>
                   <Input id="volume" value={volume} onChange={(e) => setVolume(e.target.value)} className="font-mono" />
+                  {lotSize > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Contract value: ${(lotSize * 100000 * currentPrice).toFixed(2)}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="type">Order Type</Label>
-                  <Select value={orderType} onValueChange={setOrderType}>
+                  <Select value={orderType} onValueChange={(v) => { setOrderType(v); if (v === 'limit') setTabValue('pending'); else setTabValue('market'); }}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -146,6 +328,91 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
                 </div>
               </div>
 
+              {/* Phase 5: Margin Calculator Card */}
+              {lotSize > 0 && (
+                <Card className="p-3 bg-muted/30 border-muted">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calculator className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Margin Calculation</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Required Margin</p>
+                      <p className="font-mono font-semibold">${requiredMargin.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Available Margin</p>
+                      <p className="font-mono font-semibold">
+                        ${marginInfo?.freeMargin?.toFixed(2) || '0.00'}
+                      </p>
+                    </div>
+                    {marginLevelAfterTrade && (
+                      <>
+                        <div>
+                          <p className="text-muted-foreground">Margin Level After</p>
+                          <p className={`font-mono font-semibold ${
+                            wouldTriggerStopOut ? 'text-red-500' : 
+                            wouldTriggerMarginCall ? 'text-yellow-500' : 
+                            'text-green-500'
+                          }`}>
+                            {marginLevelAfterTrade.toFixed(1)}%
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Current Margin Level</p>
+                          <p className="font-mono font-semibold">
+                            {marginInfo?.marginLevel?.toFixed(1) || '0.0'}%
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {wouldTriggerStopOut && (
+                    <div className="flex items-center gap-2 mt-2 p-2 rounded bg-red-500/10 border border-red-500/20">
+                      <AlertTriangle className="h-4 w-4 text-red-500" />
+                      <span className="text-xs text-red-500">
+                        Warning: This trade would trigger stop out (Level &lt; 20%)
+                      </span>
+                    </div>
+                  )}
+                  {wouldTriggerMarginCall && !wouldTriggerStopOut && (
+                    <div className="flex items-center gap-2 mt-2 p-2 rounded bg-yellow-500/10 border border-yellow-500/20">
+                      <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                      <span className="text-xs text-yellow-500">
+                        Warning: This trade would trigger margin call (Level &lt; 50%)
+                      </span>
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {/* Phase 5: Position Size from Risk Calculator */}
+              <Card className="p-3 bg-primary/5 border-primary/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <Info className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">Calculate Position from Risk</span>
+                </div>
+                <div className="flex gap-2">
+                  <Input 
+                    placeholder="Risk amount ($)" 
+                    value={riskAmount}
+                    onChange={(e) => setRiskAmount(e.target.value)}
+                    className="flex-1 font-mono"
+                  />
+                  <Button 
+                    onClick={calculatePositionFromRisk}
+                    variant="outline"
+                    size="sm"
+                    disabled={!riskAmount || !stopLoss}
+                  >
+                    Calculate
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enter risk amount and stop loss to calculate optimal position size
+                </p>
+              </Card>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="stopLoss">Stop Loss</Label>
@@ -156,6 +423,16 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
                     onChange={(e) => setStopLoss(e.target.value)}
                     className="font-mono"
                   />
+                  {slCalculation && (
+                    <div className="text-xs space-y-0.5">
+                      <p className="text-muted-foreground">
+                        Distance: <span className="font-mono">{slCalculation.pips} pips</span>
+                      </p>
+                      <p className="text-red-500 font-medium">
+                        Risk: <span className="font-mono">${slCalculation.risk}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="takeProfit">Take Profit</Label>
@@ -166,14 +443,59 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
                     onChange={(e) => setTakeProfit(e.target.value)}
                     className="font-mono"
                   />
+                  {tpCalculation && (
+                    <div className="text-xs space-y-0.5">
+                      <p className="text-muted-foreground">
+                        Distance: <span className="font-mono">{tpCalculation.pips} pips</span>
+                      </p>
+                      <p className="text-green-500 font-medium">
+                        Reward: <span className="font-mono">${tpCalculation.reward}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Phase 5: Commission & Swap Preview */}
+              {lotSize > 0 && (
+                <Card className="p-3 bg-muted/20 border-muted">
+                  <div className="text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Estimated Commission:</span>
+                      <span className="font-mono">${estimatedCommission.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Swap (per day):</span>
+                      <span className="font-mono">${estimatedSwap.toFixed(2)}</span>
+                    </div>
+                    {slCalculation && tpCalculation && (
+                      <div className="flex justify-between pt-2 border-t border-muted mt-2">
+                        <span className="text-muted-foreground">Risk:Reward Ratio:</span>
+                        <span className="font-mono font-semibold text-primary">
+                          1:{(parseFloat(tpCalculation.reward) / parseFloat(slCalculation.risk)).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
             </TabsContent>
 
             <TabsContent value="pending" className="space-y-4 mt-4">
-              <div className="text-center py-8 text-muted-foreground">
-                <p>Pending order functionality</p>
-                <p className="text-sm">Set price levels for future execution</p>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="limitPrice">Limit / Trigger Price</Label>
+                  <Input
+                    id="limitPrice"
+                    placeholder="Enter trigger price"
+                    value={limitPrice}
+                    onChange={(e) => setLimitPrice(e.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+                <div className="text-center py-2 text-muted-foreground">
+                  <p className="text-sm">When the market reaches the trigger price the order will be filled.</p>
+                </div>
               </div>
             </TabsContent>
           </Tabs>

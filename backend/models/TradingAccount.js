@@ -12,6 +12,7 @@ class TradingAccount {
     this.leverage = parseFloat(data.leverage);
     this.balance = parseFloat(data.balance);
     this.equity = parseFloat(data.equity);
+    this.usedMargin = parseFloat(data.used_margin || 0);
     this.freeMargin = parseFloat(data.free_margin);
     this.marginLevel = parseFloat(data.margin_level);
     this.status = data.status;
@@ -128,20 +129,48 @@ class TradingAccount {
 
   // Update account equity based on open positions
   async refreshAccountMetrics() {
+    // Get unrealized P&L from open positions
     const unrealizedPnL = await this.getUnrealizedPnL();
     const equity = this.balance + unrealizedPnL;
-    const freeMargin = equity; // Simplified: free margin = equity (no margin calculation)
-  const marginLevel = 0; // Simplified: not calculating margin level
+
+    // Calculate used margin from all open positions
+    const marginQuery = await executeQuery(`
+      SELECT 
+        COALESCE(SUM((p.lot_size * s.contract_size * p.open_price) / ta.leverage), 0) as used_margin
+      FROM positions p
+      JOIN symbols s ON p.symbol_id = s.id
+      JOIN trading_accounts ta ON p.account_id = ta.id
+      WHERE p.account_id = ? AND p.status = 'open'
+    `, [this.id]);
+
+    const usedMargin = parseFloat(marginQuery[0]?.used_margin || 0);
+    const freeMargin = Math.max(equity - usedMargin, 0);
+    const marginLevel = usedMargin > 0 ? (equity / usedMargin) * 100 : 0;
 
     await executeQuery(
-      'UPDATE trading_accounts SET equity = ?, free_margin = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [equity, freeMargin, this.id]
+      'UPDATE trading_accounts SET equity = ?, used_margin = ?, free_margin = ?, margin_level = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [equity, usedMargin, freeMargin, marginLevel, this.id]
     );
 
     this.equity = equity;
+    this.usedMargin = usedMargin;
     this.freeMargin = freeMargin;
-  this.marginLevel = marginLevel;
-  this.updatedAt = new Date();
+    this.marginLevel = marginLevel;
+    this.updatedAt = new Date();
+  }
+
+  // Get used margin from open positions
+  async getUsedMargin() {
+    const marginQuery = await executeQuery(`
+      SELECT 
+        COALESCE(SUM((p.lot_size * s.contract_size * p.open_price) / ta.leverage), 0) as used_margin
+      FROM positions p
+      JOIN symbols s ON p.symbol_id = s.id
+      JOIN trading_accounts ta ON p.account_id = ta.id
+      WHERE p.account_id = ? AND p.status = 'open'
+    `, [this.id]);
+
+    return parseFloat(marginQuery[0]?.used_margin || 0);
   }
 
   // Convert to JSON for API responses
@@ -155,6 +184,7 @@ class TradingAccount {
       leverage: this.leverage,
       balance: this.balance,
       equity: this.equity,
+      usedMargin: this.usedMargin,
       freeMargin: this.freeMargin,
       marginLevel: this.marginLevel,
       status: this.status,

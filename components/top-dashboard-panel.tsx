@@ -129,6 +129,9 @@ export function TopDashboardPanel() {
       console.log('Dashboard stats API response:', response)
       
       if (response.success) {
+        console.log('Setting dashboardStats with data:', response.data)
+        console.log('  usedMargin from response:', response.data.usedMargin)
+        console.log('  freeMargin from response:', response.data.freeMargin)
         setDashboardStats(response.data)
         console.log('Dashboard stats updated:', response.data)
       } else {
@@ -176,7 +179,7 @@ export function TopDashboardPanel() {
           balance: activeAccount.balance || 0,
           equity: activeAccount.equity || 0,
           freeMargin: activeAccount.freeMargin || 0,
-          usedMargin: (activeAccount.equity || 0) - (activeAccount.freeMargin || 0),
+          usedMargin: activeAccount.usedMargin || 0,
           marginLevel: activeAccount.marginLevel || 0
         })
         setUseBasicData(true)

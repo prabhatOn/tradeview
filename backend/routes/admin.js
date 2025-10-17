@@ -485,6 +485,122 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
   });
 }));
 
+// --- Introducing Brokers management (admin) ---
+router.get('/introducing-brokers', asyncHandler(async (req, res) => {
+  // Make the query tolerant: some databases may not yet have the `ib_share_percent` column
+  const colCheck = await executeQuery(`
+    SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'introducing_brokers' AND COLUMN_NAME = 'ib_share_percent' AND TABLE_SCHEMA = DATABASE()
+    LIMIT 1
+  `);
+
+  const hasShareColumn = Array.isArray(colCheck) && colCheck.length > 0;
+
+  // Build SELECT fragments depending on whether ib_share_percent exists
+  const ibRelationshipFields = [
+    'ib.id',
+    'ib.ib_user_id',
+    'ib.client_user_id',
+    'ib.referral_code',
+    'ib.commission_rate',
+    hasShareColumn ? 'ib.ib_share_percent' : 'NULL AS ib_share_percent',
+    'ib.status',
+    'ib.tier_level',
+    'ib.total_commission_earned',
+    'ib.total_client_volume',
+    'ib.active_clients_count',
+    'ib.created_at',
+    'ib.updated_at',
+    'u.email AS ib_email',
+    'cu.email AS client_email',
+    'FALSE AS is_profile_only'
+  ].join(',\n      ');
+
+  const profileFields = [
+    'NULL AS id',
+    'u.id AS ib_user_id',
+    'NULL AS client_user_id',
+    'NULL AS referral_code',
+    'NULL AS commission_rate',
+    'NULL AS ib_share_percent',
+    "COALESCE(ib_app.status, CASE WHEN COALESCE(roles_data.has_ib,0)=1 THEN 'approved' ELSE 'approved' END) AS status",
+    'NULL AS tier_level',
+    '0.0000 AS total_commission_earned',
+    '0.0000 AS total_client_volume',
+    '0 AS active_clients_count',
+    'u.created_at AS created_at',
+    'NULL AS updated_at',
+    'u.email AS ib_email',
+    'NULL AS client_email',
+    'TRUE AS is_profile_only'
+  ].join(',\n      ');
+
+  const sql = `
+    SELECT * FROM (
+      SELECT
+        ${ibRelationshipFields}
+      FROM introducing_brokers ib
+      JOIN users u ON u.id = ib.ib_user_id
+      JOIN users cu ON cu.id = ib.client_user_id
+
+      UNION ALL
+
+      SELECT
+        ${profileFields}
+      FROM users u
+      LEFT JOIN (
+        SELECT
+          ur.user_id,
+          MAX(CASE WHEN LOWER(r.name) = 'ib' THEN 1 ELSE 0 END) AS has_ib
+        FROM user_roles ur
+        INNER JOIN roles r ON r.id = ur.role_id
+        GROUP BY ur.user_id
+      ) AS roles_data ON roles_data.user_id = u.id
+      LEFT JOIN ib_applications ib_app ON ib_app.user_id = u.id
+      WHERE (COALESCE(roles_data.has_ib,0) = 1 OR ib_app.status = 'approved')
+        AND NOT EXISTS (SELECT 1 FROM introducing_brokers ib2 WHERE ib2.ib_user_id = u.id)
+    ) t
+    ORDER BY created_at DESC
+    LIMIT 1000
+  `;
+
+  const rows = await executeQuery(sql);
+  res.json({ success: true, data: rows });
+}));
+
+const adminUpdateIbSchema = Joi.object({
+  commissionRate: Joi.number().min(0).max(1).optional(),
+  status: Joi.string().valid('active','inactive','suspended').optional(),
+  tierLevel: Joi.string().valid('bronze','silver','gold','platinum').optional(),
+  ibSharePercent: Joi.number().min(0).max(100).optional()
+}).min(1);
+
+router.patch('/introducing-brokers/:id', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid IB id', 400);
+
+  const { error, value } = adminUpdateIbSchema.validate(req.body, { stripUnknown: true, abortEarly: false });
+  if (error) throw new AppError(error.details.map(d => d.message).join(', '), 400);
+
+  const ib = await executeQuery('SELECT * FROM introducing_brokers WHERE id = ?', [id]);
+  if (!ib.length) throw new AppError('IB relationship not found', 404);
+
+  const fields = [];
+  const params = [];
+  if (value.commissionRate !== undefined) { fields.push('commission_rate = ?'); params.push(value.commissionRate); }
+  if (value.status !== undefined) { fields.push('status = ?'); params.push(value.status); }
+  if (value.tierLevel !== undefined) { fields.push('tier_level = ?'); params.push(value.tierLevel); }
+  if (value.ibSharePercent !== undefined) { fields.push('ib_share_percent = ?'); params.push(value.ibSharePercent); }
+
+  if (!fields.length) throw new AppError('No valid fields to update', 400);
+
+  params.push(id);
+  await executeQuery(`UPDATE introducing_brokers SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, params);
+
+  const updated = await executeQuery('SELECT * FROM introducing_brokers WHERE id = ?', [id]);
+  res.json({ success: true, data: updated[0] });
+}));
+
 // Get all users with filtering and pagination
 router.get('/users', asyncHandler(async (req, res) => {
   await ensureIbApplicationsTable();
@@ -1692,8 +1808,8 @@ router.post('/trading/positions', asyncHandler(async (req, res) => {
   }
 
   const contractSize = parseFloat(symbol.contract_size) || 100000;
-  const marginRequirement = parseFloat(symbol.margin_requirement) || 1;
-  const requiredMargin = (lotSize * contractSize * openPrice * marginRequirement) / 100;
+  const accountLeverage = parseFloat(account.leverage) || 100; // Get leverage from account
+  const requiredMargin = (lotSize * contractSize * openPrice) / accountLeverage;
 
   const hasSufficientMargin = await account.hasSufficientMargin(requiredMargin);
   if (!hasSufficientMargin) {
@@ -2563,6 +2679,501 @@ router.patch('/settings', asyncHandler(async (req, res) => {
   }
 
   res.json({ message: 'Settings updated successfully' });
+}));
+
+// ===== PHASE 4: ADMIN IB MANAGEMENT ROUTES =====
+
+const IntroducingBrokerService = require('../services/IntroducingBrokerService');
+
+// Update IB share percentage (Admin only) - using USER ID not relationship ID
+router.put('/ib/:ibId/share-percent', adminMiddleware, asyncHandler(async (req, res) => {
+  const { ibId } = req.params;
+  const { sharePercent } = req.body;
+
+  if (!sharePercent || sharePercent < 0 || sharePercent > 100) {
+    throw new AppError('Invalid share percentage (must be 0-100)', 400);
+  }
+
+  await IntroducingBrokerService.updateIBSharePercentByUserId(
+    parseInt(ibId),
+    parseFloat(sharePercent),
+    req.user.id
+  );
+
+  res.json({
+    success: true,
+    message: 'IB share percentage updated successfully',
+    data: {
+      ibId: parseInt(ibId),
+      sharePercent: parseFloat(sharePercent)
+    }
+  });
+}));
+
+// Update global IB commission settings (Admin only)
+router.put('/ib/global-settings', adminMiddleware, asyncHandler(async (req, res) => {
+  const { settingKey, settingValue } = req.body;
+
+  if (!settingKey || settingValue === undefined) {
+    throw new AppError('Setting key and value are required', 400);
+  }
+
+  const validKeys = ['default_commission_rate', 'default_ib_share_percent', 'min_ib_share_percent', 'max_ib_share_percent'];
+  if (!validKeys.includes(settingKey)) {
+    throw new AppError(`Invalid setting key. Must be one of: ${validKeys.join(', ')}`, 400);
+  }
+
+  await IntroducingBrokerService.updateGlobalSetting(
+    settingKey,
+    parseFloat(settingValue),
+    req.user.id
+  );
+
+  res.json({
+    success: true,
+    message: 'Global IB setting updated successfully',
+    data: {
+      settingKey,
+      settingValue: parseFloat(settingValue)
+    }
+  });
+}));
+
+// Get all IBs with commission stats (Admin only)
+router.get('/ib/all', adminMiddleware, asyncHandler(async (req, res) => {
+  const ibs = await IntroducingBrokerService.getAllIBsWithStats();
+
+  res.json({
+    success: true,
+    data: ibs
+  });
+}));
+
+// Get IB commission breakdown (Admin only)
+router.get('/ib/commissions/breakdown', adminMiddleware, asyncHandler(async (req, res) => {
+  const { dateFrom, dateTo } = req.query;
+
+  const breakdown = await executeQuery(`
+    SELECT 
+      ib.id,
+      u.first_name,
+      u.last_name,
+      u.email,
+      ib.ib_share_percent,
+      ib.commission_rate,
+      ib.tier_level,
+      COUNT(DISTINCT ic.id) as total_trades,
+      SUM(COALESCE(ic.total_commission, 0)) as total_commission,
+      SUM(COALESCE(ic.ib_amount, 0)) as total_ib_amount,
+      SUM(COALESCE(ic.admin_amount, 0)) as total_admin_amount,
+      COUNT(DISTINCT ib2.client_user_id) as total_clients
+    FROM introducing_brokers ib
+    JOIN users u ON ib.ib_user_id = u.id
+    LEFT JOIN ib_commissions ic ON ic.ib_relationship_id = ib.id
+      ${dateFrom && dateTo ? 'AND ic.created_at BETWEEN ? AND ?' : ''}
+    LEFT JOIN introducing_brokers ib2 ON ib2.ib_user_id = ib.ib_user_id
+    GROUP BY ib.id, u.first_name, u.last_name, u.email, ib.ib_share_percent, 
+             ib.commission_rate, ib.tier_level
+    ORDER BY total_commission DESC
+  `, dateFrom && dateTo ? [dateFrom, dateTo] : []);
+
+  res.json({
+    success: true,
+    data: breakdown.map(row => ({
+      id: row.id,
+      ibName: `${row.first_name} ${row.last_name}`,
+      ibEmail: row.email,
+      ibSharePercent: parseFloat(row.ib_share_percent || 50),
+      commissionRate: parseFloat(row.commission_rate || 0),
+      tierLevel: row.tier_level || 'bronze',
+      totalTrades: parseInt(row.total_trades || 0),
+      totalCommission: parseFloat(row.total_commission || 0),
+      totalIBAmount: parseFloat(row.total_ib_amount || 0),
+      totalAdminAmount: parseFloat(row.total_admin_amount || 0),
+      totalClients: parseInt(row.total_clients || 0)
+    }))
+  });
+}));
+
+// Get all pending commissions (Admin only)
+router.get('/ib/commissions/pending', adminMiddleware, asyncHandler(async (req, res) => {
+  const pendingCommissions = await IntroducingBrokerService.getPendingCommissions();
+
+  res.json({
+    success: true,
+    data: pendingCommissions
+  });
+}));
+
+// Mark commission as paid (Admin only)
+router.put('/ib/commissions/:commissionId/mark-paid', adminMiddleware, asyncHandler(async (req, res) => {
+  const { commissionId } = req.params;
+
+  await IntroducingBrokerService.markAsPaid(
+    parseInt(commissionId),
+    req.user.id
+  );
+
+  res.json({
+    success: true,
+    message: 'Commission marked as paid successfully',
+    data: {
+      commissionId: parseInt(commissionId)
+    }
+  });
+}));
+
+// Get IB global settings (Admin only)
+router.get('/ib/global-settings', adminMiddleware, asyncHandler(async (req, res) => {
+  const settings = await IntroducingBrokerService.getGlobalSettings();
+
+  res.json({
+    success: true,
+    data: settings
+  });
+}));
+
+// ==================== SYMBOL MANAGEMENT ROUTES ====================
+
+// Get all symbols with filtering and pagination
+router.get('/symbols', adminMiddleware, asyncHandler(async (req, res) => {
+  const { category, search, status = 'all', page = 1, limit = 50 } = req.query;
+  
+  let sql = `
+    SELECT 
+      s.*,
+      ac.name as category_name,
+      ac.description as category_description
+    FROM symbols s
+    LEFT JOIN asset_categories ac ON s.category_id = ac.id
+    WHERE 1=1
+  `;
+  
+  const params = [];
+  
+  if (status !== 'all') {
+    sql += ' AND s.is_active = ?';
+    params.push(status === 'active' ? 1 : 0);
+  }
+  
+  if (category && category !== 'all') {
+    sql += ' AND ac.name = ?';
+    params.push(category);
+  }
+  
+  if (search) {
+    sql += ' AND (s.symbol LIKE ? OR s.name LIKE ?)';
+    params.push(`%${search}%`, `%${search}%`);
+  }
+  
+  // Get total count
+  const countSql = `SELECT COUNT(*) as total FROM (${sql}) as counted`;
+  const [countResult] = await executeQuery(countSql, params);
+  const total = countResult.total;
+  
+  // Add pagination
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  sql += ' ORDER BY s.symbol ASC LIMIT ? OFFSET ?';
+  params.push(parseInt(limit), offset);
+  
+  const symbols = await executeQuery(sql, params);
+  
+  res.json({
+    success: true,
+    data: {
+      symbols,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    }
+  });
+}));
+
+// Get single symbol details
+router.get('/symbols/:id', adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const symbols = await executeQuery(
+    `SELECT 
+      s.*,
+      ac.name as category_name
+    FROM symbols s
+    LEFT JOIN asset_categories ac ON s.category_id = ac.id
+    WHERE s.id = ?`,
+    [id]
+  );
+  
+  if (symbols.length === 0) {
+    throw new AppError('Symbol not found', 404);
+  }
+  
+  res.json({
+    success: true,
+    data: symbols[0]
+  });
+}));
+
+// Create new symbol
+router.post('/symbols', adminMiddleware, asyncHandler(async (req, res) => {
+  const symbolSchema = Joi.object({
+    symbol: Joi.string().required().max(20),
+    name: Joi.string().required().max(200),
+    category_id: Joi.number().integer().required(),
+    base_currency: Joi.string().max(10).optional().allow(null),
+    quote_currency: Joi.string().max(10).optional().allow(null),
+    pip_size: Joi.number().positive().default(0.0001),
+    lot_size: Joi.number().positive().default(100000),
+    min_lot: Joi.number().positive().default(0.01),
+    max_lot: Joi.number().positive().default(100),
+    lot_step: Joi.number().positive().default(0.01),
+    contract_size: Joi.number().positive().default(100000),
+    margin_requirement: Joi.number().positive().default(1.0),
+    spread_type: Joi.string().valid('fixed', 'floating').default('floating'),
+    spread_markup: Joi.number().default(0),
+    commission_type: Joi.string().valid('per_lot', 'percentage', 'fixed').default('per_lot'),
+    commission_value: Joi.number().default(0),
+    swap_long: Joi.number().default(0),
+    swap_short: Joi.number().default(0),
+    is_active: Joi.boolean().default(true)
+  });
+  
+  const { error, value } = symbolSchema.validate(req.body);
+  if (error) {
+    throw new AppError(error.details[0].message, 400);
+  }
+  
+  // Check if symbol already exists
+  const existing = await executeQuery(
+    'SELECT id FROM symbols WHERE symbol = ?',
+    [value.symbol.toUpperCase()]
+  );
+  
+  if (existing.length > 0) {
+    throw new AppError('Symbol already exists', 400);
+  }
+  
+  // Check if category exists
+  const category = await executeQuery(
+    'SELECT id FROM asset_categories WHERE id = ?',
+    [value.category_id]
+  );
+  
+  if (category.length === 0) {
+    throw new AppError('Invalid category', 400);
+  }
+  
+  const result = await executeQuery(
+    `INSERT INTO symbols (
+      symbol, name, category_id, base_currency, quote_currency,
+      pip_size, lot_size, min_lot, max_lot, lot_step,
+      contract_size, margin_requirement, spread_type, spread_markup,
+      commission_type, commission_value, swap_long, swap_short, is_active
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      value.symbol.toUpperCase(), value.name, value.category_id,
+      value.base_currency, value.quote_currency, value.pip_size,
+      value.lot_size, value.min_lot, value.max_lot, value.lot_step,
+      value.contract_size, value.margin_requirement, value.spread_type,
+      value.spread_markup, value.commission_type, value.commission_value,
+      value.swap_long, value.swap_short, value.is_active
+    ]
+  );
+  
+  const newSymbol = await executeQuery(
+    'SELECT s.*, ac.name as category_name FROM symbols s LEFT JOIN asset_categories ac ON s.category_id = ac.id WHERE s.id = ?',
+    [result.insertId]
+  );
+  
+  res.status(201).json({
+    success: true,
+    message: 'Symbol created successfully',
+    data: newSymbol[0]
+  });
+}));
+
+// Update symbol
+router.put('/symbols/:id', adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const symbolSchema = Joi.object({
+    symbol: Joi.string().max(20).optional(),
+    name: Joi.string().max(200).optional(),
+    category_id: Joi.number().integer().optional(),
+    base_currency: Joi.string().max(10).optional().allow(null),
+    quote_currency: Joi.string().max(10).optional().allow(null),
+    pip_size: Joi.number().positive().optional(),
+    lot_size: Joi.number().positive().optional(),
+    min_lot: Joi.number().positive().optional(),
+    max_lot: Joi.number().positive().optional(),
+    lot_step: Joi.number().positive().optional(),
+    contract_size: Joi.number().positive().optional(),
+    margin_requirement: Joi.number().positive().optional(),
+    spread_type: Joi.string().valid('fixed', 'floating').optional(),
+    spread_markup: Joi.number().optional(),
+    commission_type: Joi.string().valid('per_lot', 'percentage', 'fixed').optional(),
+    commission_value: Joi.number().optional(),
+    swap_long: Joi.number().optional(),
+    swap_short: Joi.number().optional(),
+    is_active: Joi.boolean().optional()
+  });
+  
+  const { error, value } = symbolSchema.validate(req.body);
+  if (error) {
+    throw new AppError(error.details[0].message, 400);
+  }
+  
+  // Check if symbol exists
+  const existing = await executeQuery('SELECT id FROM symbols WHERE id = ?', [id]);
+  if (existing.length === 0) {
+    throw new AppError('Symbol not found', 404);
+  }
+  
+  // Check if new symbol name conflicts
+  if (value.symbol) {
+    const conflict = await executeQuery(
+      'SELECT id FROM symbols WHERE symbol = ? AND id != ?',
+      [value.symbol.toUpperCase(), id]
+    );
+    if (conflict.length > 0) {
+      throw new AppError('Symbol name already exists', 400);
+    }
+    value.symbol = value.symbol.toUpperCase();
+  }
+  
+  // Check if category exists
+  if (value.category_id) {
+    const category = await executeQuery(
+      'SELECT id FROM asset_categories WHERE id = ?',
+      [value.category_id]
+    );
+    if (category.length === 0) {
+      throw new AppError('Invalid category', 400);
+    }
+  }
+  
+  // Build update query dynamically
+  const updateFields = [];
+  const updateValues = [];
+  
+  Object.keys(value).forEach(key => {
+    updateFields.push(`${key} = ?`);
+    updateValues.push(value[key]);
+  });
+  
+  if (updateFields.length === 0) {
+    throw new AppError('No fields to update', 400);
+  }
+  
+  updateValues.push(id);
+  
+  await executeQuery(
+    `UPDATE symbols SET ${updateFields.join(', ')} WHERE id = ?`,
+    updateValues
+  );
+  
+  const updated = await executeQuery(
+    'SELECT s.*, ac.name as category_name FROM symbols s LEFT JOIN asset_categories ac ON s.category_id = ac.id WHERE s.id = ?',
+    [id]
+  );
+  
+  res.json({
+    success: true,
+    message: 'Symbol updated successfully',
+    data: updated[0]
+  });
+}));
+
+// Delete symbol
+router.delete('/symbols/:id', adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  // Check if symbol exists
+  const symbol = await executeQuery('SELECT id, symbol FROM symbols WHERE id = ?', [id]);
+  if (symbol.length === 0) {
+    throw new AppError('Symbol not found', 404);
+  }
+  
+  // Check if symbol has open positions
+  const openPositions = await executeQuery(
+    'SELECT COUNT(*) as count FROM positions WHERE symbol_id = ? AND status = ?',
+    [id, 'open']
+  );
+  
+  if (openPositions[0].count > 0) {
+    throw new AppError('Cannot delete symbol with open positions. Please close all positions first.', 400);
+  }
+  
+  // Soft delete - just set is_active to false
+  await executeQuery(
+    'UPDATE symbols SET is_active = 0 WHERE id = ?',
+    [id]
+  );
+  
+  res.json({
+    success: true,
+    message: 'Symbol deactivated successfully',
+    data: { id, symbol: symbol[0].symbol }
+  });
+}));
+
+// Permanently delete symbol (use with caution)
+router.delete('/symbols/:id/permanent', adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  // Check if symbol exists
+  const symbol = await executeQuery('SELECT id, symbol FROM symbols WHERE id = ?', [id]);
+  if (symbol.length === 0) {
+    throw new AppError('Symbol not found', 404);
+  }
+  
+  // Check if symbol has any positions (open or closed)
+  const positions = await executeQuery(
+    'SELECT COUNT(*) as count FROM positions WHERE symbol_id = ?',
+    [id]
+  );
+  
+  if (positions[0].count > 0) {
+    throw new AppError('Cannot permanently delete symbol with position history', 400);
+  }
+  
+  // Delete market prices first (due to foreign key)
+  await executeQuery('DELETE FROM market_prices WHERE symbol_id = ?', [id]);
+  
+  // Delete the symbol
+  await executeQuery('DELETE FROM symbols WHERE id = ?', [id]);
+  
+  res.json({
+    success: true,
+    message: 'Symbol permanently deleted',
+    data: { id, symbol: symbol[0].symbol }
+  });
+}));
+
+// Toggle symbol active status
+router.patch('/symbols/:id/toggle-status', adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const symbol = await executeQuery('SELECT id, symbol, is_active FROM symbols WHERE id = ?', [id]);
+  if (symbol.length === 0) {
+    throw new AppError('Symbol not found', 404);
+  }
+  
+  const newStatus = !symbol[0].is_active;
+  
+  await executeQuery('UPDATE symbols SET is_active = ? WHERE id = ?', [newStatus, id]);
+  
+  res.json({
+    success: true,
+    message: `Symbol ${newStatus ? 'activated' : 'deactivated'} successfully`,
+    data: {
+      id,
+      symbol: symbol[0].symbol,
+      is_active: newStatus
+    }
+  });
 }));
 
 module.exports = router;

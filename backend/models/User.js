@@ -71,13 +71,13 @@ class User {
     const [userRows] = await executeQuery('SELECT * FROM users WHERE id = ?', [userId]);
     const user = new User(userRows);
 
-    // Create default trading account
+    // Create default trading account with zero balance
     const accountNumber = `100${String(userId).padStart(7, '0')}`;
     await executeQuery(
       `INSERT INTO trading_accounts (
         user_id, account_number, account_type, currency, leverage, 
         balance, equity, free_margin, status
-      ) VALUES (?, ?, 'demo', 'USD', ?, 100000.00, 100000.00, 100000.00, 'active')`,
+      ) VALUES (?, ?, 'live', 'USD', ?, 0.00, 0.00, 0.00, 'active')`,
       [userId, accountNumber, preferredLeverage]
     );
 

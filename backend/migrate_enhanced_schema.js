@@ -160,6 +160,7 @@ async function runMigration() {
         client_user_id INT NOT NULL,
         referral_code VARCHAR(20) UNIQUE NOT NULL,
         commission_rate DECIMAL(5,4) DEFAULT 0.0070,
+        ib_share_percent DECIMAL(5,2) DEFAULT 50.00,
         status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
         tier_level ENUM('bronze', 'silver', 'gold', 'platinum') DEFAULT 'bronze',
         total_commission_earned DECIMAL(15,4) DEFAULT 0.0000,
@@ -186,6 +187,8 @@ async function runMigration() {
         trade_id INT,
         position_id INT,
         commission_amount DECIMAL(15,4) NOT NULL,
+        ib_amount DECIMAL(15,4) NULL,
+        client_commission DECIMAL(15,4) NULL,
         commission_rate DECIMAL(5,4) NOT NULL,
         trade_volume DECIMAL(15,4),
         currency VARCHAR(3) DEFAULT 'USD',
@@ -492,9 +495,5 @@ async function runMigration() {
   }
 }
 
-// Run migration if called directly
-if (require.main === module) {
-  runMigration();
-}
-
-module.exports = { runMigration };
+// Export runMigration for programmatic use (ESM)
+export { runMigration };

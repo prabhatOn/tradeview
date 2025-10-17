@@ -19,8 +19,8 @@ class Position {
     this.openPrice = parseFloat(data.open_price);
     this.currentPrice = parseFloat(data.current_price) || parseFloat(data.open_price);
     this.closePrice = data.close_price ? parseFloat(data.close_price) : null;
-    this.stopLoss = data.stop_loss ? parseFloat(data.stop_loss) : null;
-    this.takeProfit = data.take_profit ? parseFloat(data.take_profit) : null;
+    this.stopLoss = data.stop_loss != null ? parseFloat(data.stop_loss) : null;
+    this.takeProfit = data.take_profit != null ? parseFloat(data.take_profit) : null;
     this.commission = parseFloat(data.commission) || 0;
     this.swap = parseFloat(data.swap) || 0;
     this.profit = parseFloat(data.profit) || 0;
@@ -39,6 +39,8 @@ class Position {
     this.symbol = data.symbol;
     this.symbolName = data.symbol_name;
     this.accountNumber = data.account_number;
+  this.orderType = data.order_type || data.orderType || 'market';
+  this.triggerPrice = data.trigger_price != null ? parseFloat(data.trigger_price) : (data.triggerPrice != null ? parseFloat(data.triggerPrice) : null);
   }
 
   static async findById(positionId) {
@@ -78,7 +80,7 @@ class Position {
       FROM positions p
       JOIN symbols s ON p.symbol_id = s.id
       JOIN trading_accounts ta ON p.account_id = ta.id
-      WHERE p.account_id = ? AND p.status = 'open'
+      WHERE p.account_id = ? AND p.status IN ('open','pending')
       ORDER BY p.opened_at DESC`,
       [accountId]
     );
@@ -97,7 +99,7 @@ class Position {
       FROM positions p
       JOIN symbols s ON p.symbol_id = s.id
       JOIN trading_accounts ta ON p.account_id = ta.id
-      WHERE p.status IN ('open', 'closed') AND ta.user_id = ?
+      WHERE p.status IN ('open', 'closed', 'pending') AND ta.user_id = ?
     `;
     
     const params = [userId];
@@ -535,8 +537,10 @@ class Position {
       commission: this.commission || 0,
       swap: this.swap || 0,
       
-      // Status and metadata
+  // Status and metadata
       status: this.status,
+  orderType: this.orderType,
+  triggerPrice: this.triggerPrice,
       comment: this.comment,
       magicNumber: this.magicNumber,
       accountNumber: this.accountNumber,

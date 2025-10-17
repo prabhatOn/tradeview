@@ -201,6 +201,9 @@ export const marketService = {
   getMarketCategories: (): Promise<ApiResponse<Array<{ value: string; label: string; count: number }>>> =>
     apiClient.get('/market/categories'),
   
+  getCategories: (): Promise<any> =>
+    apiClient.get('/market/categories'),
+  
   getSymbol: (id: number): Promise<ApiResponse<Symbol>> =>
     apiClient.get(`/market/symbols/${id}`),
   
@@ -613,6 +616,71 @@ export const introducingBrokerService = {
     apiClient.post('/introducing-broker/admin/revoke', { userId }),
 };
 
+// Admin Introducing Broker services
+export const adminIbService = {
+  listIbs: (): Promise<ApiResponse<any[]>> => apiClient.get('/admin/introducing-brokers'),
+  updateIb: (id: number, data: { commissionRate?: number; status?: string; tierLevel?: string; ibSharePercent?: number }) =>
+    apiClient.patch(`/admin/introducing-brokers/${id}`, data),
+  
+  // Phase 4: Enhanced IB Management
+  getAllIBsWithStats: (): Promise<ApiResponse<any[]>> =>
+    apiClient.get('/admin/ib/all'),
+  
+  updateIBSharePercent: (ibId: number, sharePercent: number): Promise<ApiResponse<any>> =>
+    apiClient.put(`/admin/ib/${ibId}/share-percent`, { sharePercent }),
+  
+  getCommissionBreakdown: (dateFrom?: string, dateTo?: string): Promise<ApiResponse<any[]>> =>
+    apiClient.get('/admin/ib/commissions/breakdown', { dateFrom, dateTo }),
+  
+  getPendingCommissions: (): Promise<ApiResponse<any[]>> =>
+    apiClient.get('/admin/ib/commissions/pending'),
+  
+  markCommissionPaid: (commissionId: number): Promise<ApiResponse<any>> =>
+    apiClient.put(`/admin/ib/commissions/${commissionId}/mark-paid`, {}),
+  
+  getGlobalSettings: (): Promise<ApiResponse<any>> =>
+    apiClient.get('/admin/ib/global-settings'),
+  
+  updateGlobalSetting: (settingKey: string, settingValue: number): Promise<ApiResponse<any>> =>
+    apiClient.put('/admin/ib/global-settings', { settingKey, settingValue })
+};
+
+// IB User Services
+export const ibService = {
+  getCommissionSummary: (dateFrom?: string, dateTo?: string): Promise<ApiResponse<any>> =>
+    apiClient.get('/introducing-broker/commissions/summary', { dateFrom, dateTo }),
+  
+  getSettings: (): Promise<ApiResponse<any>> =>
+    apiClient.get('/introducing-broker/settings'),
+  
+  getPendingCommissions: (): Promise<ApiResponse<any[]>> =>
+    apiClient.get('/introducing-broker/commissions/pending')
+};
+
+// Enhanced Trading Services
+export const enhancedTradingService = {
+  // Margin Info
+  getMarginInfo: (accountId: number): Promise<ApiResponse<any>> =>
+    apiClient.get(`/trading/accounts/${accountId}/margin-info`),
+  
+  // Leverage
+  getLeverageOptions: (accountType?: string): Promise<ApiResponse<any>> =>
+    apiClient.get('/trading/leverage-options', { accountType }),
+  
+  updateAccountLeverage: (accountId: number, leverage: number): Promise<ApiResponse<any>> =>
+    apiClient.put(`/trading/accounts/${accountId}/leverage`, { leverage }),
+  
+  // Position Management
+  updateStopLoss: (positionId: number, stopLoss: number | null): Promise<ApiResponse<any>> =>
+    apiClient.put(`/trading/positions/${positionId}/stop-loss`, { stopLoss }),
+  
+  updateTakeProfit: (positionId: number, takeProfit: number | null): Promise<ApiResponse<any>> =>
+    apiClient.put(`/trading/positions/${positionId}/take-profit`, { takeProfit }),
+  
+  cancelPendingOrder: (positionId: number): Promise<ApiResponse<any>> =>
+    apiClient.delete(`/trading/positions/${positionId}/cancel`)
+};
+
 // Payment Gateway Services
 export const paymentGatewayService = {
   getGateways: (currency?: string): Promise<ApiResponse<any[]>> =>
@@ -653,6 +721,84 @@ export const paymentGatewayService = {
     
   getGatewayStats: (gatewayId: number, period = '30d'): Promise<ApiResponse<any>> =>
     apiClient.get(`/payment-gateways/admin/${gatewayId}/stats`, { period }),
+};
+
+// Admin Symbol Management Service
+export const adminSymbolService = {
+  getAllSymbols: (params?: {
+    category?: string;
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<ApiResponse<{
+    symbols: any[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }>> =>
+    apiClient.get('/admin/symbols', params),
+    
+  getSymbol: (id: number): Promise<ApiResponse<any>> =>
+    apiClient.get(`/admin/symbols/${id}`),
+    
+  createSymbol: (data: {
+    symbol: string;
+    name: string;
+    category_id: number;
+    base_currency?: string;
+    quote_currency?: string;
+    pip_size?: number;
+    lot_size?: number;
+    min_lot?: number;
+    max_lot?: number;
+    lot_step?: number;
+    contract_size?: number;
+    margin_requirement?: number;
+    spread_type?: 'fixed' | 'floating';
+    spread_markup?: number;
+    commission_type?: 'per_lot' | 'percentage' | 'fixed';
+    commission_value?: number;
+    swap_long?: number;
+    swap_short?: number;
+    is_active?: boolean;
+  }): Promise<ApiResponse<any>> =>
+    apiClient.post('/admin/symbols', data),
+    
+  updateSymbol: (id: number, data: Partial<{
+    symbol: string;
+    name: string;
+    category_id: number;
+    base_currency: string;
+    quote_currency: string;
+    pip_size: number;
+    lot_size: number;
+    min_lot: number;
+    max_lot: number;
+    lot_step: number;
+    contract_size: number;
+    margin_requirement: number;
+    spread_type: 'fixed' | 'floating';
+    spread_markup: number;
+    commission_type: 'per_lot' | 'percentage' | 'fixed';
+    commission_value: number;
+    swap_long: number;
+    swap_short: number;
+    is_active: boolean;
+  }>): Promise<ApiResponse<any>> =>
+    apiClient.put(`/admin/symbols/${id}`, data),
+    
+  deleteSymbol: (id: number): Promise<ApiResponse<void>> =>
+    apiClient.delete(`/admin/symbols/${id}`),
+    
+  permanentlyDeleteSymbol: (id: number): Promise<ApiResponse<void>> =>
+    apiClient.delete(`/admin/symbols/${id}/permanent`),
+    
+  toggleSymbolStatus: (id: number): Promise<ApiResponse<any>> =>
+    apiClient.patch(`/admin/symbols/${id}/toggle-status`),
 };
 
 // Utility function to handle API errors

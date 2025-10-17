@@ -27,6 +27,7 @@ const { authMiddleware } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const NotificationService = require('./services/NotificationService');
 const PositionUpdateService = require('./services/PositionUpdateService');
+const PendingOrderService = require('./services/PendingOrderService');
 const MarketDataService = require('./services/MarketDataService');
 const { initializeMarketData } = require('./initialize_market_data');
 
@@ -45,10 +46,12 @@ const fundsRoutes = require('./routes/funds');
 const introducingBrokerRoutes = require('./routes/introducing-broker');
 const paymentGatewayRoutes = require('./routes/payment-gateways');
 const tradingApiRoutes = require('./routes/trading-api');
+const kycRoutes = require('./routes/kyc');
+const bankDetailsRoutes = require('./routes/bank-details');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || 'localhost';
 const DEV_HOST = process.env.DEV_HOST || 'localhost';
 
 // Initialize database and ensure schema patches are applied
@@ -74,6 +77,7 @@ app.use(helmet({
 const devOrigins = Array.from(
   new Set([
     'http://localhost:3000',
+    'http://127.0.0.1:3000',
     `http://${DEV_HOST}:3000`,
   ]),
 );
@@ -124,6 +128,8 @@ app.use('/api/admin', authMiddleware, adminRoutes);
 app.use('/api/api-keys', authMiddleware, apiKeysRoutes);
 app.use('/api/funds', authMiddleware, fundsRoutes);
 app.use('/api/introducing-broker', authMiddleware, introducingBrokerRoutes);
+app.use('/api/kyc', kycRoutes);
+app.use('/api/bank-details', bankDetailsRoutes);
 app.use('/api/payment-gateways', paymentGatewayRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/status', statusRoutes);
@@ -262,6 +268,28 @@ cron.schedule('*/10 * * * * *', async () => {
     }
   } catch (error) {
     console.error('High-frequency position update failed:', error);
+  }
+});
+
+// Process pending limit orders every 5 seconds
+cron.schedule('*/5 * * * * *', async () => {
+  try {
+    const results = await PendingOrderService.processPendingOrders();
+    if (results.filled > 0) {
+      broadcast({ type: 'pending_orders_processed', data: results });
+    }
+  } catch (error) {
+    console.error('Error processing pending orders:', error);
+  }
+});
+
+// Daily cleanup: remove old pending and closed positions at 02:00 server time
+cron.schedule('0 2 * * *', async () => {
+  try {
+    const results = await PendingOrderService.dailyCleanup({ pendingDays: 7, closedDays: 30 });
+    console.log(`Daily cleanup removed pending: ${results.pendingDeleted}, closed: ${results.closedDeleted}`);
+  } catch (error) {
+    console.error('Daily cleanup failed:', error);
   }
 });
 

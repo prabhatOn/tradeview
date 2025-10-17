@@ -76,7 +76,8 @@ export function AdminSidebar({ className, collapsed = false, onCollapsedChange, 
         <div className="space-y-1">
           {items.map((item, index) => {
             const isActive = pathname === item.href
-            const Icon = item.icon
+            // Ensure icon is defined; fall back to Shield if missing
+            const Icon = item.icon || Shield
 
             return (
               <Link key={index} href={item.href} className="block">
@@ -90,10 +91,14 @@ export function AdminSidebar({ className, collapsed = false, onCollapsedChange, 
                   )}
                 >
                   
-                  <Icon className={cn(
-                    "h-4 w-4 flex-shrink-0 transition-colors duration-200",
-                    collapsed ? "" : "mr-3"
-                  )} />
+                  {Icon ? (
+                    <Icon className={cn(
+                      "h-4 w-4 flex-shrink-0 transition-colors duration-200",
+                      collapsed ? "" : "mr-3"
+                    )} />
+                  ) : (
+                    <Shield className="h-4 w-4 flex-shrink-0 transition-colors duration-200" />
+                  )}
                   
                   {!collapsed && (
                     <span className="font-medium truncate">{item.title}</span>

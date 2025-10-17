@@ -17,12 +17,17 @@ import {
   Save,
   Moon,
   Sun,
-  Sparkles
+  Sparkles,
+  FileText,
+  Building2
 } from "lucide-react"
 import { Toaster } from '@/components/ui/toaster'
 import { useToast } from '@/hooks/use-toast'
+import KycDocuments from "@/components/settings/kyc-documents"
+import BankDetailsList from "@/components/settings/bank-details-list"
+import ChangePasswordForm from "@/components/settings/change-password-form"
 
-type SettingsSection = 'profile' | 'account' | 'security' | 'notifications' | 'appearance' | 'api';
+type SettingsSection = 'profile' | 'account' | 'security' | 'kyc' | 'bank' | 'notifications' | 'appearance' | 'api';
 
 // --- REUSABLE COMPONENTS ---
 const SettingsCard: FC<{ title: string; description: string; children: ReactNode }> = ({ title, description, children }) => (
@@ -95,22 +100,25 @@ const ProfileSettings = () => {
 };
 
 const SecuritySettings = () => (
-    <SettingsCard title="Security Settings" description="Manage your account security features.">
-        <div className="flex items-center justify-between p-4 rounded-md bg-muted/30">
-            <div>
-                <h4 className="font-medium">Two-Factor Authentication (2FA)</h4>
-                <p className="text-sm text-muted-foreground">Add an extra layer of security to your account.</p>
+    <div className="space-y-6">
+        <SettingsCard title="Security Settings" description="Manage your account security features.">
+            <div className="flex items-center justify-between p-4 rounded-md bg-muted/30">
+                <div>
+                    <h4 className="font-medium">Two-Factor Authentication (2FA)</h4>
+                    <p className="text-sm text-muted-foreground">Add an extra layer of security to your account.</p>
+                </div>
+                <Switch defaultChecked />
             </div>
-            <Switch defaultChecked />
-        </div>
-        <div className="flex items-center justify-between p-4 rounded-md bg-muted/30">
-            <div>
-                <h4 className="font-medium">Email Notifications on Login</h4>
-                <p className="text-sm text-muted-foreground">Receive security alerts via email for new logins.</p>
+            <div className="flex items-center justify-between p-4 rounded-md bg-muted/30">
+                <div>
+                    <h4 className="font-medium">Email Notifications on Login</h4>
+                    <p className="text-sm text-muted-foreground">Receive security alerts via email for new logins.</p>
+                </div>
+                <Switch defaultChecked />
             </div>
-            <Switch defaultChecked />
-        </div>
-    </SettingsCard>
+        </SettingsCard>
+        <ChangePasswordForm />
+    </div>
 );
 
 const NotificationSettings = () => (
@@ -178,6 +186,14 @@ const ApiSettings = () => (
     </SettingsCard>
 );
 
+const KycSettings = () => {
+    return <KycDocuments />;
+};
+
+const BankSettings = () => {
+    return <BankDetailsList />;
+};
+
 
 // --- MAIN PAGE COMPONENT ---
 export default function SettingsPage() {
@@ -188,6 +204,8 @@ export default function SettingsPage() {
   const renderContent = () => {
     switch (activeSection) {
       case 'profile': return <ProfileSettings />;
+      case 'kyc': return <KycSettings />;
+      case 'bank': return <BankSettings />;
       case 'security': return <SecuritySettings />;
       case 'notifications': return <NotificationSettings />;
       case 'appearance': return <AppearanceSettings />;
@@ -198,6 +216,8 @@ export default function SettingsPage() {
   
   const navItems = [
     { id: 'profile', label: 'Profile', icon: <User size={18} /> },
+    { id: 'kyc', label: 'KYC Verification', icon: <FileText size={18} /> },
+    { id: 'bank', label: 'Bank Details', icon: <Building2 size={18} /> },
     { id: 'security', label: 'Security', icon: <Shield size={18} /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
     { id: 'appearance', label: 'Appearance', icon: <Palette size={18} /> },

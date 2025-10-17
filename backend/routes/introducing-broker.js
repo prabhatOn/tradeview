@@ -670,4 +670,45 @@ router.get('/status', asyncHandler(async (req, res) => {
   res.json({ success: true, data: { isIB, applicationStatus } });
 }));
 
+// ===== PHASE 4: NEW IB COMMISSION ROUTES =====
+
+// Get commission summary for IB
+router.get('/commissions/summary', asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { dateFrom, dateTo } = req.query;
+
+  const summary = await IntroducingBrokerService.getIBCommissionSummary(
+    userId,
+    dateFrom || null,
+    dateTo || null
+  );
+
+  res.json({
+    success: true,
+    data: summary
+  });
+}));
+
+// Get IB settings (global)
+router.get('/settings', asyncHandler(async (req, res) => {
+  const settings = await IntroducingBrokerService.getGlobalSettings();
+
+  res.json({
+    success: true,
+    data: settings
+  });
+}));
+
+// Get pending commissions for IB
+router.get('/commissions/pending', asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+
+  const pendingCommissions = await IntroducingBrokerService.getPendingCommissions(userId);
+
+  res.json({
+    success: true,
+    data: pendingCommissions
+  });
+}));
+
 module.exports = router;

@@ -30,6 +30,9 @@ const openPositionSchema = Joi.object({
     Joi.allow(null)
   ).optional(),
   comment: Joi.string().max(255).allow(null, '').optional()
+  ,
+  orderType: Joi.string().valid('market','limit').optional(),
+  triggerPrice: Joi.alternatives().try(Joi.number().positive(), Joi.allow(null)).optional()
 });
 
 const closePositionSchema = Joi.object({
@@ -58,6 +61,7 @@ router.get('/accounts', asyncHandler(async (req, res) => {
       const openPositionsCount = await account.getOpenPositionsCount();
       const unrealizedPnL = await account.getUnrealizedPnL();
       const equity = account.balance + unrealizedPnL;
+      const usedMargin = await account.getUsedMargin();
       
       return {
         id: account.id,
@@ -73,9 +77,9 @@ router.get('/accounts', asyncHandler(async (req, res) => {
         // Financial metrics
         balance: account.balance,
         equity: equity,
-        freeMargin: equity, // Simplified
-        margin: 0, // Simplified
-        marginLevel: 0, // Simplified
+        usedMargin: usedMargin,
+        freeMargin: Math.max(equity - usedMargin, 0),
+        marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
         
         // Position info
         openPositions: openPositionsCount,
@@ -108,6 +112,9 @@ router.get('/accounts/:accountId', asyncHandler(async (req, res) => {
   const unrealizedPnL = await account.getUnrealizedPnL();
   const equity = account.balance + unrealizedPnL;
   
+  // Get used margin from the account
+  const usedMargin = await account.getUsedMargin();
+  
   // Flatten the structure to match AccountSummary interface
   const accountSummary = {
     // Account basic info
@@ -121,9 +128,9 @@ router.get('/accounts/:accountId', asyncHandler(async (req, res) => {
     // Financial metrics
     balance: account.balance,
     equity: equity,
-    margin: 0, // Simplified - not calculating used margin
-    freeMargin: equity, // Simplified - free margin = equity
-    marginLevel: 0, // Simplified - not calculating margin level
+    margin: usedMargin,
+    freeMargin: Math.max(equity - usedMargin, 0),
+    marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
     
     // Position info
     totalPositions: openPositionsCount,
@@ -372,7 +379,8 @@ router.post('/positions', asyncHandler(async (req, res) => {
     throw new AppError(error.details[0].message, 400);
   }
 
-  const { accountId, symbolId, side, lotSize, stopLoss, takeProfit, comment } = value;
+  // Accept optional orderType and triggerPrice for limit orders
+  const { accountId, symbolId, side, lotSize, stopLoss, takeProfit, comment, orderType, triggerPrice } = value;
 
   // Verify account belongs to user
   const tradingAccount = await TradingAccount.findByIdAndUserId(accountId, req.user.id);
@@ -412,17 +420,17 @@ router.post('/positions', asyncHandler(async (req, res) => {
   const currentPrice = prices[0];
   const openPrice = side === 'buy' ? currentPrice.ask : currentPrice.bid;
 
-  // Calculate required margin
+  // Calculate required margin using ACCOUNT LEVERAGE (not symbol margin_requirement)
   const contractSize = parseFloat(symbol.contract_size);
-  const marginRequirement = parseFloat(symbol.margin_requirement);
-  const requiredMargin = (lotSize * contractSize * openPrice * marginRequirement) / 100;
+  const accountLeverage = parseFloat(tradingAccount.leverage) || 100; // Get leverage from account
+  const requiredMargin = (lotSize * contractSize * openPrice) / accountLeverage;
 
   console.log('Margin calculation debug:', {
     symbol: symbol.symbol,
     lotSize,
     contractSize,
     openPrice,
-    marginRequirement,
+    accountLeverage,
     requiredMargin,
     accountBalance: tradingAccount.balance,
     accountFreeMargin: tradingAccount.freeMargin
@@ -441,17 +449,41 @@ router.post('/positions', asyncHandler(async (req, res) => {
     throw new AppError(`Insufficient margin to open position. Required: $${requiredMargin.toFixed(2)}, Available: $${tradingAccount.freeMargin.toFixed(2)}`, 400);
   }
 
-  // Create position using the model
-  const position = await Position.create({
-    accountId,
-    symbolId,
-    side,
-    lotSize,
-    openPrice,
-    stopLoss,
-    takeProfit,
-    comment
-  });
+  // If this is a limit order, create a pending position with trigger_price
+  let position = null;
+  // If orderType is limit but no triggerPrice provided, reject the request
+  if (orderType === 'limit' && (triggerPrice === undefined || triggerPrice === null)) {
+    throw new AppError('triggerPrice is required for limit orders', 400);
+  }
+
+  if (orderType === 'limit' && triggerPrice !== undefined && triggerPrice !== null) {
+    // insert pending position
+    const insert = await executeQuery(
+      `INSERT INTO positions (
+        account_id, symbol_id, order_id, side, lot_size, open_price, stop_loss, take_profit, commission, comment, order_type, trigger_price, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [tradingAccount.id, symbolId, null, side, lotSize, openPrice, stopLoss || null, takeProfit || null, 0, comment, 'limit', triggerPrice]
+    );
+
+    const created = await executeQuery(
+      `SELECT p.*, s.contract_size, s.pip_size, ta.account_number, s.symbol FROM positions p JOIN symbols s ON p.symbol_id = s.id JOIN trading_accounts ta ON p.account_id = ta.id WHERE p.id = ?`,
+      [insert.insertId]
+    );
+
+    position = created.length ? new Position(created[0]) : null;
+  } else {
+    // Create immediate market position
+    position = await Position.create({
+      accountId,
+      symbolId,
+      side,
+      lotSize,
+      openPrice,
+      stopLoss,
+      takeProfit,
+      comment
+    });
+  }
 
   if (!position) {
     throw new AppError('Failed to create position', 500);
@@ -800,6 +832,268 @@ router.post('/positions/update-all', asyncHandler(async (req, res) => {
     console.error('Error updating positions:', error);
     throw new AppError('Failed to update positions', 500);
   }
+}));
+
+// ===== PHASE 4: NEW ENHANCED TRADING ROUTES =====
+
+// Get margin information for account
+router.get('/accounts/:accountId/margin-info', asyncHandler(async (req, res) => {
+  const { accountId } = req.params;
+  const userId = req.user.id;
+
+  const account = await TradingAccount.findByIdAndUserId(parseInt(accountId), userId);
+  if (!account) {
+    throw new AppError('Trading account not found', 404);
+  }
+
+  // Refresh margin metrics
+  await account.refreshAccountMetrics();
+
+  res.json({
+    success: true,
+    data: {
+      accountId: account.id,
+      balance: parseFloat(account.balance),
+      equity: parseFloat(account.equity),
+      marginUsed: parseFloat(account.margin_used || 0),
+      freeMargin: parseFloat(account.free_margin || 0),
+      marginLevel: parseFloat(account.margin_level || 0),
+      marginCallLevel: parseFloat(account.margin_call_level || 50),
+      stopOutLevel: parseFloat(account.stop_out_level || 20),
+      tradingPower: parseFloat(account.balance) * parseFloat(account.leverage),
+      leverage: parseFloat(account.leverage)
+    }
+  });
+}));
+
+// Get available leverage options based on account type
+router.get('/leverage-options', asyncHandler(async (req, res) => {
+  const { accountType } = req.query;
+  const LeverageService = require('../services/LeverageService');
+
+  const type = accountType || 'live';
+  const options = LeverageService.getAvailableLeverages(type);
+
+  res.json({
+    success: true,
+    data: {
+      accountType: type,
+      leverageOptions: options,
+      descriptions: options.map(lev => ({
+        leverage: lev,
+        marginPercentage: (100 / lev).toFixed(2) + '%',
+        description: `1:${lev} leverage requires ${(100 / lev).toFixed(2)}% margin`
+      }))
+    }
+  });
+}));
+
+// Update account leverage
+router.put('/accounts/:accountId/leverage', asyncHandler(async (req, res) => {
+  const { accountId } = req.params;
+  const { leverage } = req.body;
+  const userId = req.user.id;
+  const LeverageService = require('../services/LeverageService');
+
+  if (!leverage || leverage <= 0) {
+    throw new AppError('Invalid leverage value', 400);
+  }
+
+  const account = await TradingAccount.findByIdAndUserId(parseInt(accountId), userId);
+  if (!account) {
+    throw new AppError('Trading account not found', 404);
+  }
+
+  // Check if account has open positions
+  const openPositions = await executeQuery(
+    'SELECT COUNT(*) as count FROM positions WHERE account_id = ? AND status = "open"',
+    [accountId]
+  );
+
+  if (openPositions[0].count > 0) {
+    throw new AppError('Cannot change leverage with open positions', 400);
+  }
+
+  // Validate leverage for account type
+  if (!LeverageService.validateLeverage(leverage, account.account_type)) {
+    throw new AppError(`Leverage ${leverage} not available for ${account.account_type} account`, 400);
+  }
+
+  // Update leverage
+  await executeQuery(
+    'UPDATE trading_accounts SET leverage = ?, max_leverage = ? WHERE id = ?',
+    [leverage, leverage, accountId]
+  );
+
+  res.json({
+    success: true,
+    message: 'Leverage updated successfully',
+    data: {
+      accountId: parseInt(accountId),
+      newLeverage: leverage
+    }
+  });
+}));
+
+// Update stop loss for position
+router.put('/positions/:positionId/stop-loss', asyncHandler(async (req, res) => {
+  const { positionId } = req.params;
+  let { stopLoss } = req.body;
+  const userId = req.user.id;
+
+  console.log('=== STOP LOSS UPDATE DEBUG ===');
+  console.log('Position ID:', positionId);
+  console.log('Request body:', JSON.stringify(req.body));
+  console.log('stopLoss value:', stopLoss);
+  console.log('stopLoss type:', typeof stopLoss);
+  console.log('User ID:', userId);
+
+  // Extra safety: convert any falsy value except 0 to null
+  if (stopLoss === undefined || stopLoss === '' || stopLoss === 'undefined' || stopLoss === null) {
+    console.log('Converting to null');
+    stopLoss = null;
+  }
+
+  // Convert string numbers to actual numbers
+  if (typeof stopLoss === 'string' && stopLoss !== null) {
+    stopLoss = parseFloat(stopLoss);
+    console.log('Converted string to number:', stopLoss);
+    if (isNaN(stopLoss)) {
+      console.log('NaN detected, setting to null');
+      stopLoss = null;
+    }
+  }
+
+  console.log('Final stopLoss value before SQL:', stopLoss, 'Type:', typeof stopLoss);
+
+  const position = await Position.findById(parseInt(positionId));
+  if (!position) {
+    throw new AppError('Position not found', 404);
+  }
+
+  // Verify ownership
+  const account = await TradingAccount.findById(position.accountId);
+  if (account.userId !== userId) {
+    throw new AppError('Unauthorized', 403);
+  }
+
+  // Validate stop loss
+  if (stopLoss !== null && stopLoss <= 0) {
+    throw new AppError('Invalid stop loss value', 400);
+  }
+
+  console.log(`Executing SQL UPDATE with stopLoss:`, stopLoss, 'positionId:', positionId);
+  console.log(`SQL params:`, [stopLoss, positionId]);
+
+  const result = await executeQuery(
+    'UPDATE positions SET stop_loss = ? WHERE id = ?',
+    [stopLoss, positionId]
+  );
+
+  console.log('SQL UPDATE result:', result);
+
+  // Verify the update
+  const verifyResult = await executeQuery(
+    'SELECT id, stop_loss FROM positions WHERE id = ?',
+    [positionId]
+  );
+  console.log('Verification query result:', verifyResult);
+
+  res.json({
+    success: true,
+    message: 'Stop loss updated successfully',
+    data: {
+      positionId: parseInt(positionId),
+      stopLoss: stopLoss
+    }
+  });
+}));
+
+// Update take profit for position
+router.put('/positions/:positionId/take-profit', asyncHandler(async (req, res) => {
+  const { positionId } = req.params;
+  let { takeProfit } = req.body;
+  const userId = req.user.id;
+
+  // Extra safety: convert any falsy value except 0 to null
+  if (takeProfit === undefined || takeProfit === '' || takeProfit === 'undefined') {
+    takeProfit = null;
+  }
+
+  // Convert string numbers to actual numbers
+  if (typeof takeProfit === 'string' && takeProfit !== null) {
+    takeProfit = parseFloat(takeProfit);
+    if (isNaN(takeProfit)) {
+      takeProfit = null;
+    }
+  }
+
+  const position = await Position.findById(parseInt(positionId));
+  if (!position) {
+    throw new AppError('Position not found', 404);
+  }
+
+  // Verify ownership
+  const account = await TradingAccount.findById(position.accountId);
+  if (account.userId !== userId) {
+    throw new AppError('Unauthorized', 403);
+  }
+
+  // Validate take profit
+  if (takeProfit !== null && takeProfit <= 0) {
+    throw new AppError('Invalid take profit value', 400);
+  }
+
+  console.log(`Updating position ${positionId} take profit to:`, takeProfit);
+
+  await executeQuery(
+    'UPDATE positions SET take_profit = ? WHERE id = ?',
+    [takeProfit, positionId]
+  );
+
+  res.json({
+    success: true,
+    message: 'Take profit updated successfully',
+    data: {
+      positionId: parseInt(positionId),
+      takeProfit: takeProfit
+    }
+  });
+}));
+
+// Cancel pending order
+router.delete('/positions/:positionId/cancel', asyncHandler(async (req, res) => {
+  const { positionId } = req.params;
+  const userId = req.user.id;
+
+  const position = await Position.findById(parseInt(positionId));
+  if (!position) {
+    throw new AppError('Position not found', 404);
+  }
+
+  // Verify ownership
+  const account = await TradingAccount.findById(position.accountId);
+  if (account.userId !== userId) {
+    throw new AppError('Unauthorized', 403);
+  }
+
+  // Check if position is pending
+  if (position.status !== 'pending') {
+    throw new AppError('Only pending orders can be cancelled', 400);
+  }
+
+  await executeQuery(
+    'UPDATE positions SET status = "cancelled", updated_at = NOW() WHERE id = ?',
+    [positionId]
+  );
+
+  res.json({
+    success: true,
+    message: 'Pending order cancelled successfully',
+    data: {
+      positionId: parseInt(positionId)
+    }
+  });
 }));
 
 module.exports = router;

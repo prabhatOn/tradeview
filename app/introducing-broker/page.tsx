@@ -284,6 +284,22 @@ const formatDateTime = (value?: string | null) => {
   return date.toLocaleString();
 };
 
+const getCommissionColor = (status?: string) => {
+  if (status === 'active') return 'text-emerald-600';
+  if (status === 'inactive') return 'text-gray-500';
+  return 'text-foreground';
+};
+
+const getTierBadgeColor = (tier?: string) => {
+  const normalized = (tier || '').toLowerCase();
+  if (normalized === 'platinum' || normalized === 'diamond') return 'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-300';
+  if (normalized === 'gold') return 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-300';
+  if (normalized === 'silver') return 'bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-900/30 dark:text-gray-300';
+  if (normalized === 'bronze') return 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-300';
+  return 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300';
+};
+
+
 // --- REUSABLE ROW COMPONENTS ---
 const ClientRow: FC<{ client: Client; onViewDetails: (client: Client) => void }> = ({ client, onViewDetails }) => {
   const { toast } = useToast();

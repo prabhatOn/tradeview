@@ -239,91 +239,9 @@ export default function ApiAccessPage() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left: API overview */}
-              <aside className="lg:col-span-1 space-y-6">
-                <Card className="p-6">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-md bg-muted/10 flex items-center justify-center text-muted-foreground">
-                      <Shield className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-semibold">Personal Trading API</h2>
-                      <p className="text-sm text-muted-foreground mt-1">Your personal API key for trading operations. One key per account for security.</p>
-                      <div className="mt-4 flex items-center gap-3">
-                        <div className="text-sm">
-                          <div className="text-xs text-muted-foreground">Status</div>
-                          <div className="text-lg font-medium">{apiKey ? 'Created' : 'Not Created'}</div>
-                        </div>
-                        <div className="text-sm">
-                          <div className="text-xs text-muted-foreground">Active</div>
-                          <div className="text-lg font-medium">{apiKey?.status === 'active' ? 'Yes' : 'No'}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6">
-                    {!apiKey ? (
-                      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                        <DialogTrigger asChild>
-                          <Button className="w-full inline-flex items-center justify-center gap-2">
-                            <Plus className="h-4 w-4" /> Create Personal API Key
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-[95vw] sm:max-w-md md:max-w-lg">
-                          <DialogHeader>
-                            <DialogTitle>Create Personal Trading API Key</DialogTitle>
-                            <DialogDescription>
-                              Create your personal API key for trading operations. This key will have read and trade permissions.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <CreateKeyForm onCreate={handleCreate} />
-                        </DialogContent>
-                      </Dialog>
-                    ) : (
-                      <div className="space-y-3">
-                        <Button 
-                          variant="outline" 
-                          className="w-full" 
-                          onClick={() => setViewKey(true)}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          View API Key Details
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          className="w-full" 
-                          onClick={handleToggleStatus}
-                        >
-                          <Settings className="h-4 w-4 mr-2" />
-                          {apiKey.status === 'active' ? 'Deactivate' : 'Activate'} API Key
-                        </Button>
-                        <Button 
-                          variant="destructive" 
-                          className="w-full" 
-                          onClick={() => setDeleteConfirmOpen(true)}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete API Key
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </Card>
-
-                <Card className="p-4">
-                  <CardHeader>
-                    <CardTitle>Security Notice</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">Keep your API credentials secure. The secret key is only shown once during creation.</p>
-                  </CardContent>
-                </Card>
-              </aside>
-
-              {/* Right: API key details + docs */}
-              <section className="lg:col-span-2 space-y-6">
+            <div className="w-full">
+              {/* API key details + docs */}
+              <section className="space-y-6">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h3 className="text-lg font-semibold">Personal Trading API Key</h3>

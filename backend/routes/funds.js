@@ -205,6 +205,9 @@ router.get('/dashboard/performance/:accountId', asyncHandler(async (req, res) =>
   }
 
   console.log(`Account found: ${account.accountNumber}`);
+  console.log(`Account usedMargin: ${account.usedMargin}`);
+  console.log(`Account freeMargin: ${account.freeMargin}`);
+  console.log(`Account marginLevel: ${account.marginLevel}`);
 
   // Get realized P&L from trade history
   const [totalPnLResult] = await executeQuery(`
@@ -265,13 +268,15 @@ router.get('/dashboard/performance/:accountId', asyncHandler(async (req, res) =>
     // Account metrics
     balance: account.balance,
     equity: equity,
+    usedMargin: account.usedMargin || 0,
     freeMargin: account.freeMargin || equity,
-    usedMargin: equity - (account.freeMargin || equity),
     marginLevel: account.marginLevel || 0,
     openPositions: parseInt(unrealizedResult.open_positions || 0)
   };
 
   console.log(`Sending dashboard response:`, responseData);
+  console.log(`  usedMargin: ${responseData.usedMargin}`);
+  console.log(`  freeMargin: ${responseData.freeMargin}`);
 
   res.json({
     success: true,

@@ -688,6 +688,7 @@ export interface TradingAccount {
   accountType: 'demo' | 'live' | 'islamic';
   balance: number;
   equity: number;
+  usedMargin: number;
   freeMargin: number;
   marginLevel: number;
   leverage: number;
@@ -736,6 +737,9 @@ export interface Position {
   comment?: string;
   magicNumber?: number;
   accountNumber?: string;
+  // Order related (limit/pending)
+  orderType?: 'market' | 'limit' | 'stop';
+  triggerPrice?: number | null;
   
   // Timestamps (backend and frontend compatibility)
   openedAt: string; // Backend uses 'openedAt'

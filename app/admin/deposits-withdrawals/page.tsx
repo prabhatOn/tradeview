@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react"
 import { AdminLayout } from "@/components/admin/admin-layout"
+import { adminSidebarItems, adminTopBarConfig } from '@/config/admin-config'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -68,24 +69,6 @@ import {
 } from "lucide-react"
 import { Loader2 } from "lucide-react"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
-
-const adminSidebarItems = [
-  { title: "Overview", icon: LayoutDashboard, href: "/admin", description: "Dashboard overview and analytics" },
-  { title: "User Management", icon: Users, href: "/admin/users", description: "Manage users and accounts" },
-  { title: "Trades & Charges", icon: Receipt, href: "/admin/trades-charges", description: "Trading fees and charges" },
-  { title: "Trades", icon: TrendingUp, href: "/admin/trades", description: "Trading activities monitoring" },
-  { title: "Support Tickets", icon: HeadphonesIcon, href: "/admin/support", description: "Customer support management" },
-  { title: "Deposits/Withdrawals", icon: Wallet, href: "/admin/deposits-withdrawals", description: "Transaction management" },
-  { title: "Payment Gateway", icon: CreditCard, href: "/admin/payment-gateway", description: "Payment processing settings" },
-]
-
-const adminTopBarConfig = {
-  title: "Admin Portal",
-  showBalance: false,
-  showNotifications: true,
-  showDeposit: false,
-  showUserMenu: true,
-}
 
 type TransactionType = "deposits" | "withdrawals"
 type BatchAction = "approve" | "reject"

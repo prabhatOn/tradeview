@@ -441,14 +441,21 @@ class FundManager {
         throw new Error('Manual adjustment would result in negative balance');
       }
 
+      // Get account leverage for margin calculation
+      const [leverageRows] = await connection.execute(
+        `SELECT leverage FROM trading_accounts WHERE id = ?`,
+        [accountId]
+      );
+      const accountLeverage = parseFloat(leverageRows[0]?.leverage) || 100;
+
       const [positionMetricsRows] = await connection.execute(
         `SELECT 
            COALESCE(SUM(p.profit), 0) AS unrealizedPnL,
-           COALESCE(SUM(p.lot_size * p.open_price * COALESCE(s.margin_requirement, 1)), 0) AS marginUsed
+           COALESCE(SUM((p.lot_size * s.contract_size * p.open_price) / ?), 0) AS marginUsed
          FROM positions p
          LEFT JOIN symbols s ON s.id = p.symbol_id
          WHERE p.account_id = ? AND p.status = 'open'`,
-        [accountId]
+        [accountLeverage, accountId]
       );
 
       const unrealizedPnL = parseWithFallback(positionMetricsRows[0]?.unrealizedPnL, 0);

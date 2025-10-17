@@ -5,7 +5,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const Joi = require('joi');
 const { executeQuery } = require('../config/database');
-const { generateToken } = require('../middleware/auth');
+const { generateToken, authMiddleware } = require('../middleware/auth');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const User = require('../models/User');
 const IntroducingBrokerService = require('../services/IntroducingBrokerService');
@@ -85,13 +85,13 @@ router.post('/register', asyncHandler(async (req, res) => {
   const [userRows] = await executeQuery('SELECT * FROM users WHERE id = ?', [userId]);
   const user = new User(userRows);
 
-  // Create default trading account
+  // Create default trading account with zero balance
   const accountNumber = `100${String(userId).padStart(7, '0')}`;
   await executeQuery(
     `INSERT INTO trading_accounts (
       user_id, account_number, account_type, currency, leverage, 
       balance, equity, free_margin, status
-    ) VALUES (?, ?, 'demo', 'USD', ?, 100000.00, 100000.00, 100000.00, 'active')`,
+    ) VALUES (?, ?, 'live', 'USD', ?, 0.00, 0.00, 0.00, 'active')`,
     [userId, accountNumber, preferredLeverage]
   );
 
@@ -235,13 +235,7 @@ router.get('/me', asyncHandler(async (req, res) => {
 }));
 
 // Change password
-router.post('/change-password', asyncHandler(async (req, res) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '');
-  
-  if (!token) {
-    throw new AppError('Access denied. No token provided.', 401);
-  }
-
+router.post('/change-password', authMiddleware, asyncHandler(async (req, res) => {
   // Validate input
   const { error, value } = changePasswordSchema.validate(req.body);
   if (error) {
@@ -249,16 +243,12 @@ router.post('/change-password', asyncHandler(async (req, res) => {
   }
 
   const { currentPassword, newPassword } = value;
-
-  const jwt = require('jsonwebtoken');
-  const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
-  
-  const decoded = jwt.verify(token, JWT_SECRET);
+  const userId = req.user.id; // Get from authenticated user
 
   // Get current user
   const users = await executeQuery(
     'SELECT id, password_hash FROM users WHERE id = ?',
-    [decoded.userId]
+    [userId]
   );
 
   if (!users.length) {
@@ -279,11 +269,14 @@ router.post('/change-password', asyncHandler(async (req, res) => {
 
   // Update password
   await executeQuery(
-    'UPDATE users SET password_hash = ? WHERE id = ?',
+    'UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?',
     [hashedNewPassword, user.id]
   );
 
-  res.json({ message: 'Password changed successfully' });
+  res.json({ 
+    success: true,
+    message: 'Password changed successfully' 
+  });
 }));
 
 // Logout (client-side token removal)
@@ -321,13 +314,13 @@ router.post('/register-simple', asyncHandler(async (req, res) => {
 
   const userId = userResult.insertId;
 
-  // Create default trading account
+  // Create default trading account with zero balance
   const accountNumber = `100${String(userId).padStart(7, '0')}`;
   await executeQuery(
     `INSERT INTO trading_accounts (
       user_id, account_number, account_type, currency, leverage, 
       balance, equity, free_margin, status
-    ) VALUES (?, ?, 'demo', 'USD', ?, 100000.00, 100000.00, 100000.00, 'active')`,
+    ) VALUES (?, ?, 'live', 'USD', ?, 0.00, 0.00, 0.00, 'active')`,
     [userId, accountNumber, preferredLeverage]
   );
 

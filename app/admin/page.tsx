@@ -7,6 +7,7 @@ import { formatDistanceToNow } from "date-fns"
 
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { ProtectedRoute } from "@/components/auth/protected-route"
+import { adminSidebarItems, adminTopBarConfig } from '@/config/admin-config'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -19,9 +20,7 @@ import {
   AdminDashboardSystemHealth
 } from "@/lib/types"
 import {
-  LayoutDashboard,
   Users,
-  Receipt,
   TrendingUp,
   HeadphonesIcon,
   CreditCard,
@@ -231,60 +230,6 @@ interface DashboardCardConfig {
   trend: "positive" | "negative" | "neutral"
   accentClass: string
   context?: string
-}
-
-// Admin configuration
-const adminSidebarItems = [
-  {
-    title: "Overview",
-    icon: LayoutDashboard,
-    href: "/admin",
-    description: "Dashboard overview and analytics"
-  },
-  {
-    title: "User Management",
-    icon: Users,
-    href: "/admin/users",
-    description: "Manage users and accounts"
-  },
-  {
-    title: "Trades & Charges",
-    icon: Receipt,
-    href: "/admin/trades-charges",
-    description: "Trading fees and charges"
-  },
-  {
-    title: "Trades",
-    icon: TrendingUp,
-    href: "/admin/trades",
-    description: "Trading activities monitoring"
-  },
-  {
-    title: "Support Tickets",
-    icon: HeadphonesIcon,
-    href: "/admin/support",
-    description: "Customer support management"
-  },
-  {
-    title: "Deposits/Withdrawals",
-    icon: CreditCard,
-    href: "/admin/deposits-withdrawals",
-    description: "Transaction management"
-  },
-  {
-    title: "Payment Gateway",
-    icon: Wallet,
-    href: "/admin/payment-gateway",
-    description: "Payment processing settings"
-  },
-]
-
-const adminTopBarConfig = {
-  title: "Admin Portal",
-  showBalance: false,
-  showNotifications: true,
-  showDeposit: false,
-  showUserMenu: true,
 }
 
 export default function AdminDashboard() {

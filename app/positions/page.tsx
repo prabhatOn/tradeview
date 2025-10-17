@@ -104,6 +104,7 @@ export default function PositionsPage() {
   })
   
   const openPositions = filteredPositions.filter((p: Position) => p.status === 'open')
+  const pendingPositions = filteredPositions.filter((p: Position) => p.status === 'pending')
   const closedPositions = filteredPositions.filter((p: Position) => p.status === 'closed')
 
   // Calculate statistics
@@ -506,13 +507,10 @@ export default function PositionsPage() {
               <CardContent className="p-0">
                 <Tabs defaultValue="open" className="h-full">
                   <div className="flex items-center justify-between px-6 py-4 border-b">
-                    <TabsList className="grid w-full max-w-[300px] grid-cols-2">
-                      <TabsTrigger value="open">
-                        Open Positions ({openPositions.length})
-                      </TabsTrigger>
-                      <TabsTrigger value="history">
-                        History ({closedPositions.length})
-                      </TabsTrigger>
+                    <TabsList className="grid w-full max-w-[500px] grid-cols-3">
+                      <TabsTrigger value="open">Open ({openPositions.length})</TabsTrigger>
+                      <TabsTrigger value="pending">Pending ({pendingPositions.length})</TabsTrigger>
+                      <TabsTrigger value="history">Closed ({closedPositions.length})</TabsTrigger>
                     </TabsList>
                   </div>
 
@@ -557,6 +555,69 @@ export default function PositionsPage() {
                           <TableBody>
                             {openPositions.map((position: Position) => (
                               <PositionRow key={position.id} position={position} />
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="pending" className="mt-0">
+                    {isLoading && positions.length === 0 ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                        <span className="ml-2">Loading pending positions...</span>
+                      </div>
+                    ) : pendingPositions.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>No pending positions</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Position</TableHead>
+                              <TableHead>Time</TableHead>
+                              <TableHead>Symbol</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead>Lots</TableHead>
+                              <TableHead>Trigger Price</TableHead>
+                              <TableHead>P&L</TableHead>
+                              <TableHead>Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {pendingPositions.map((position: Position) => (
+                              <TableRow key={position.id} className="hover:bg-muted/50">
+                                <TableCell className="font-medium">#{position.id}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3 text-muted-foreground" />
+                                    <span className="text-xs text-muted-foreground">
+                                      {position.openTime ? new Date(position.openTime).toLocaleTimeString() : '-'}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="font-semibold">{position.symbol}</TableCell>
+                                <TableCell>
+                                  <Badge variant={position.side === 'buy' ? 'default' : 'destructive'} className="text-xs">
+                                    {position.side?.toUpperCase() || 'UNKNOWN'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="font-mono text-sm">{position.volume || position.lotSize}</TableCell>
+                                <TableCell className="font-mono text-sm">{position.triggerPrice ? formatPrice(position.triggerPrice) : '-'}</TableCell>
+                                <TableCell className={`font-mono text-sm font-semibold ${getPnLColor(position.profit || 0)}`}>
+                                  {formatPnL(position.profit || 0)}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1">
+                                    <Button variant="ghost" size="sm" onClick={() => refetch()} className="h-8 w-8 p-0" title="Refresh">
+                                      <RefreshCw className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
                             ))}
                           </TableBody>
                         </Table>

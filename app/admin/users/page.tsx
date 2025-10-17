@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { formatDistanceToNow } from "date-fns"
 import { AdminLayout } from "@/components/admin/admin-layout"
+import { adminSidebarItems, adminTopBarConfig } from '@/config/admin-config'
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -80,24 +81,6 @@ import {
 } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { useDebounce } from "@/hooks/use-debounce"
-
-const adminSidebarItems = [
-  { title: "Overview", icon: LayoutDashboard, href: "/admin", description: "Dashboard overview and analytics" },
-  { title: "User Management", icon: Users, href: "/admin/users", description: "Manage users and accounts" },
-  { title: "Trades & Charges", icon: Receipt, href: "/admin/trades-charges", description: "Trading fees and charges" },
-  { title: "Trades", icon: TrendingUp, href: "/admin/trades", description: "Trading activities monitoring" },
-  { title: "Support Tickets", icon: HeadphonesIcon, href: "/admin/support", description: "Customer support management" },
-  { title: "Deposits/Withdrawals", icon: CreditCard, href: "/admin/deposits-withdrawals", description: "Transaction management" },
-  { title: "Payment Gateway", icon: Wallet, href: "/admin/payment-gateway", description: "Payment processing settings" },
-]
-
-const adminTopBarConfig = {
-  title: "Admin Portal",
-  showBalance: false,
-  showNotifications: true,
-  showDeposit: false,
-  showUserMenu: true,
-}
 
 const ADMIN_ACCOUNT_STATUSES = ["active", "suspended", "inactive", "pending_verification"] as const
 type AdminAccountStatus = (typeof ADMIN_ACCOUNT_STATUSES)[number]

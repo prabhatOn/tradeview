@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -60,11 +60,10 @@ export default function TradingChart() {
     (selectedSymbol ? { symbol: selectedSymbol, bid: 0, ask: 0, change: 0, changePercent: 0 } as MarketData : null)
   
   // Get historical data for chart
-  const { 
-    data: historicalData, 
-    isLoading: historyLoading, 
+  const {
+    isLoading: historyLoading,
     error: historyError,
-    refetch: refetchHistory 
+    refetch: refetchHistory
   } = useHistoricalData(selectedSymbol, timeframe)
 
   // Chart data is now handled by TradingView widget instead of local data
@@ -187,7 +186,11 @@ export default function TradingChart() {
         lotSize: orderData.lotSize,
         stopLoss: orderData.stopLoss,
         takeProfit: orderData.takeProfit,
-        comment: orderData.comment
+        comment: orderData.comment,
+        // Include orderType/orderMode so backend can create pending limit orders
+        orderType: orderData.orderType || orderMode || (orderMode === 'market' ? 'market' : 'limit'),
+        // triggerPrice is expected by backend for limit orders
+        triggerPrice: orderData.price ?? (orderMode === 'market' ? null : (cleanLimitPrice && cleanLimitPrice !== '' ? parseFloat(cleanLimitPrice) : null))
       }
       
       console.log('Request data being sent:', requestData)
@@ -202,9 +205,8 @@ export default function TradingChart() {
       })
       
       // Call trading service based on order type
-      let response
-      // Use the same request data for both order types
-      response = await tradingService.openPosition(requestData)
+  // Use the same request data for both order types
+  const response = await tradingService.openPosition(requestData)
 
       if (response.success) {
         toast({
@@ -220,11 +222,15 @@ export default function TradingChart() {
       } else {
         throw new Error(response.error?.message || 'Failed to execute order')
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Order failed:', error)
+      let message = 'Failed to execute order'
+      if (error instanceof Error) message = error.message
+      else if (typeof error === 'string') message = error
+      else message = String(error)
       toast({
         title: "Order Failed",
-        description: error.message || 'Failed to execute order',
+        description: message || 'Failed to execute order',
         variant: "destructive"
       })
     }

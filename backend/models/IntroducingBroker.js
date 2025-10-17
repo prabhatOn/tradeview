@@ -9,6 +9,7 @@ class IntroducingBroker {
     this.clientUserId = data.client_user_id;
     this.referralCode = data.referral_code;
     this.commissionRate = data.commission_rate;
+    this.ibSharePercent = data.ib_share_percent != null ? parseFloat(data.ib_share_percent) : null;
     this.status = data.status;
     this.tierLevel = data.tier_level;
     this.totalCommissionEarned = data.total_commission_earned;
@@ -74,11 +75,12 @@ class IntroducingBroker {
       throw new Error('IB or client user not found');
     }
 
+    const defaultShare = 50.00;
     const result = await executeQuery(`
       INSERT INTO introducing_brokers
-      (ib_user_id, client_user_id, referral_code, commission_rate, status)
-      VALUES (?, ?, ?, ?, 'active')
-    `, [ibUserId, clientUserId, referralCode, commissionRate]);
+      (ib_user_id, client_user_id, referral_code, commission_rate, ib_share_percent, status)
+      VALUES (?, ?, ?, ?, ?, 'active')
+    `, [ibUserId, clientUserId, referralCode, commissionRate, defaultShare]);
 
     return this.findById(result.insertId);
   }
@@ -112,6 +114,10 @@ class IntroducingBroker {
       fields.push('total_client_volume = ?');
       values.push(updates.totalClientVolume);
     }
+    if (updates.ibSharePercent !== undefined) {
+      fields.push('ib_share_percent = ?');
+      values.push(updates.ibSharePercent);
+    }
 
     if (fields.length === 0) return this;
 
@@ -130,12 +136,12 @@ class IntroducingBroker {
   }
 
   // Record commission for a trade
-  static async recordCommission(ibRelationshipId, tradeId, positionId, commissionAmount, commissionRate, tradeVolume) {
+  static async recordCommission(ibRelationshipId, tradeId, positionId, commissionAmount, commissionRate, tradeVolume, ibAmount = null, clientCommission = null) {
     const result = await executeQuery(`
       INSERT INTO ib_commissions
-      (ib_relationship_id, trade_id, position_id, commission_amount, commission_rate, trade_volume)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [ibRelationshipId, tradeId, positionId, commissionAmount, commissionRate, tradeVolume]);
+      (ib_relationship_id, trade_id, position_id, commission_amount, commission_rate, trade_volume, ib_amount, client_commission)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [ibRelationshipId, tradeId, positionId, commissionAmount, commissionRate, tradeVolume, ibAmount, clientCommission]);
 
     // Update IB totals
     await executeQuery(`
