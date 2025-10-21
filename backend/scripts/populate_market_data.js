@@ -79,7 +79,7 @@ async function populateMarketData() {
       const accountNumber = `MT${Date.now()}`;
       
       await connection.execute(`
-        INSERT INTO trading_accounts (user_id, account_number, account_type, status, balance, equity, margin, free_margin, margin_level, currency, leverage, server_name, group_name)
+        INSERT INTO trading_accounts (user_id, account_number, account_type, status, balance, equity, used_margin, free_margin, margin_level, currency, leverage, server_name, group_name)
         VALUES (?, ?, 'standard', 'active', 10000.00, 10000.00, 0.00, 10000.00, 0.00, 'USD', 100, 'MetaTrader-Live', 'standard')
       `, [8, accountNumber]);
 

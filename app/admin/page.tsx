@@ -194,30 +194,6 @@ const getSystemHealthRows = (
     }
   )
 
-  rows.push(
-    {
-      label: "API Latency",
-      value: latency ? `${Math.round(latency)} ms` : "—",
-      severity: latency && latency > 800 ? "critical" : latency && latency > 500 ? "warning" : "success",
-      isBadge: false
-    }
-  )
-
-  rows.push(
-    {
-      label: "Server Status",
-      value: formatStatusLabel(health.serverStatus),
-      severity: deriveSeverity(health.serverStatus),
-      isBadge: true
-    },
-    {
-      label: "Database",
-      value: formatStatusLabel(health.databaseStatus),
-      severity: deriveSeverity(health.databaseStatus),
-      isBadge: true
-    }
-  )
-
   return rows
 }
 
@@ -513,7 +489,7 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center">
                     <Activity className="h-4 w-4 mr-2" />
-                    System Health
+                    Insights
                   </CardTitle>
                   {healthUpdatedLabel && (
                     <span className="text-xs text-muted-foreground">

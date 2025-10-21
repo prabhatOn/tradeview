@@ -5,6 +5,7 @@
 
 const { executeQuery } = require('../config/database');
 const NotificationService = require('./NotificationService');
+const TradingService = require('./TradingService');
 
 class MarginService {
   /**
@@ -97,13 +98,14 @@ class MarginService {
     await executeQuery(`
       UPDATE trading_accounts
       SET margin_used = ?,
+          used_margin = ?,
           equity = ?,
           free_margin = ?,
           margin_level = ?,
           trading_power = ?,
           updated_at = NOW()
       WHERE id = ?
-    `, [marginUsed, equity, freeMargin, marginLevel, tradingPower, accountId]);
+    `, [marginUsed, marginUsed, equity, freeMargin, marginLevel, tradingPower, accountId]);
 
     return {
       marginUsed,
@@ -115,15 +117,16 @@ class MarginService {
   }
 
   /**
-   * Check for margin call and stop out conditions
+   * Check for auto square-off conditions only
    * @param {number} accountId - Trading account ID
    * @returns {Promise<Object>} Margin status and actions taken
    */
   static async checkMarginCall(accountId) {
     const metrics = await this.updateAccountMarginMetrics(accountId);
 
+    // Fetch account settings for auto-square-off
     const [account] = await executeQuery(
-      'SELECT margin_call_level, stop_out_level, user_id FROM trading_accounts WHERE id = ?',
+      'SELECT user_id, balance, auto_square_percent FROM trading_accounts WHERE id = ?',
       [accountId]
     );
 
@@ -137,18 +140,16 @@ class MarginService {
       action: null
     };
 
-    // Check for stop out (critical)
-    if (metrics.marginLevel < account.stop_out_level && metrics.marginUsed > 0) {
-      result.status = 'stop_out';
-      result.action = await this.triggerStopOut(accountId, metrics, account);
-      return result;
-    }
-
-    // Check for margin call (warning)
-    if (metrics.marginLevel < account.margin_call_level && metrics.marginUsed > 0) {
-      result.status = 'margin_call';
-      result.action = await this.triggerMarginCall(accountId, metrics, account);
-      return result;
+    // Auto square-off: if account has auto_square_percent set, and equity falls to or below
+    // (balance * auto_square_percent / 100), then attempt to automatically square off (close)
+    // positions to protect remaining funds. This is a configurable admin-set percentage.
+    if (account.auto_square_percent != null && Number.isFinite(account.balance)) {
+      const threshold = parseFloat(account.balance) * (parseFloat(account.auto_square_percent) / 100);
+      if (metrics.equity <= threshold && metrics.marginUsed > 0) {
+        result.status = 'auto_square_off';
+        result.action = await this.triggerAutoSquareOff(accountId, metrics, account);
+        return result;
+      }
     }
 
     return result;
@@ -264,6 +265,73 @@ class MarginService {
   }
 
   /**
+   * Trigger automatic square-off based on admin-configured percentage
+   * Closes losing positions first until equity is above the configured threshold
+   */
+  static async triggerAutoSquareOff(accountId, metrics, account) {
+
+    // New behavior: immediately close ALL open positions for the account (regardless of profit/loss)
+    // Fetch all open positions
+    const positions = await executeQuery(`
+      SELECT id, profit, symbol_id
+      FROM positions
+      WHERE account_id = ? AND status = 'open'
+    `, [accountId]);
+
+    let closedPositions = 0;
+    let totalLoss = 0;
+    const closedPositionIds = [];
+
+    // Close every position using TradingService.closePosition to ensure history/balance updates
+    const [acctInfo] = await executeQuery('SELECT user_id FROM trading_accounts WHERE id = ?', [accountId]);
+    const accountUserId = acctInfo?.user_id || account.user_id || account.userId || null;
+
+    for (const position of positions) {
+      try {
+        await TradingService.closePosition(accountUserId, position.id);
+        closedPositions++;
+        totalLoss += parseFloat(position.profit || 0);
+        closedPositionIds.push(position.id);
+      } catch (error) {
+        console.error(`Failed to auto-close position ${position.id} during auto-square-off:`, error);
+      }
+    }
+
+    // Recalculate metrics one final time after all closes
+    metrics = await this.updateAccountMarginMetrics(accountId);
+
+    // Log auto square-off event with final metrics
+    const [result] = await executeQuery(`
+      INSERT INTO margin_events 
+      (account_id, event_type, margin_level, equity, margin_used, free_margin, positions_closed, total_loss)
+      VALUES (?, 'auto_square_off', ?, ?, ?, ?, ?, ?)
+    `, [accountId, metrics.marginLevel, metrics.equity, metrics.marginUsed, metrics.freeMargin, closedPositions, totalLoss]);
+
+    // Optionally notify user
+    try {
+      if (NotificationService && NotificationService.sendStopOutNotification) {
+        await NotificationService.sendStopOutNotification(account.user_id, {
+          accountId,
+          marginLevel: metrics.marginLevel,
+          positionsClosed: closedPositions,
+          totalLoss
+        });
+      }
+    } catch (error) {
+      console.error('Failed to send auto-square-off notification:', error);
+    }
+
+    return {
+      eventId: result.insertId,
+      type: 'auto_square_off',
+      marginLevel: metrics.marginLevel,
+      positionsClosed: closedPositions,
+      totalLoss,
+      closedPositionIds
+    };
+  }
+
+  /**
    * Calculate free margin
    * @param {number} equity - Account equity
    * @param {number} marginUsed - Margin in use
@@ -305,6 +373,75 @@ class MarginService {
       reason: 'Sufficient margin available'
     };
   }
+
+  /**
+   * Force close all open positions for an account (regardless of profit or loss)
+   * Intended for admin immediate action. Records a margin_event 'force_close_all'.
+   * @param {number} accountId
+   * @param {number} initiatedBy - optional user/admin id who initiated
+   */
+  static async forceCloseAllPositions(accountId, initiatedBy = null) {
+    // Get all open positions for account
+    const positions = await executeQuery(`
+      SELECT id, profit, symbol_id
+      FROM positions
+      WHERE account_id = ? AND status = 'open'
+      ORDER BY opened_at ASC
+    `, [accountId]);
+
+    let closedPositions = 0;
+    let totalPnl = 0;
+    const closedPositionIds = [];
+
+    // fetch account user id for close operations
+    const [acctInfo] = await executeQuery('SELECT user_id FROM trading_accounts WHERE id = ?', [accountId]);
+    const accountUserId = acctInfo?.user_id || null;
+
+    for (const position of positions) {
+      try {
+        // Use TradingService.closePosition to ensure trade history and balance updates occur
+        await TradingService.closePosition(accountUserId, position.id);
+
+        closedPositions++;
+        totalPnl += parseFloat(position.profit || 0);
+        closedPositionIds.push(position.id);
+
+        // Recalculate metrics after each close to keep trading account consistent
+        await this.updateAccountMarginMetrics(accountId);
+      } catch (error) {
+        console.error(`Failed to force-close position ${position.id}:`, error);
+        // continue with other positions
+      }
+    }
+
+    // Log force-close event
+    const [result] = await executeQuery(`
+      INSERT INTO margin_events
+      (account_id, event_type, margin_level, equity, margin_used, free_margin, positions_closed, total_loss, initiated_by)
+      VALUES (?, 'force_close_all', ?, ?, ?, ?, ?, ?, ?)
+    `, [accountId, 0, 0, 0, 0, closedPositions, totalPnl, initiatedBy]);
+
+    try {
+      const [acct] = await executeQuery('SELECT user_id FROM trading_accounts WHERE id = ?', [accountId]);
+      if (acct && NotificationService && NotificationService.sendStopOutNotification) {
+        await NotificationService.sendStopOutNotification(acct.user_id, {
+          accountId,
+          positionsClosed: closedPositions,
+          totalPnl
+        });
+      }
+    } catch (err) {
+      console.error('Failed to notify user for forceCloseAllPositions:', err);
+    }
+
+    return {
+      eventId: result?.insertId || null,
+      positionsClosed: closedPositions,
+      totalPnl,
+      closedPositionIds
+    };
+  }
 }
 
 module.exports = MarginService;
+

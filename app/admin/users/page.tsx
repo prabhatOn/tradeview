@@ -1611,22 +1611,17 @@ export default function UsersPage() {
                       ) : detailSnapshot.accounts.length ? (
                         <div className="space-y-2">
                           {detailSnapshot.accounts.map((account) => (
-                            <div key={account.id} className="rounded-lg border border-border/40 p-3 text-sm sm:p-4">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="font-semibold">{account.account_number}</div>
-                                <Badge variant="outline" className="capitalize">
-                                  {formatStatus(account.status)}
-                                </Badge>
-                              </div>
-                              <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2 sm:gap-y-2">
-                                <span>Type: {formatStatus(account.account_type)}</span>
-                                <span>Balance: {formatCurrency(Number(account.balance) || 0)}</span>
-                                <span>Equity: {formatCurrency(Number(account.equity) || 0)}</span>
-                                <span>Free margin: {formatCurrency(Number(account.free_margin) || 0)}</span>
-                                <span>Leverage: {Number(account.leverage) || 0}x</span>
-                                <span>Opened: {formatDate(account.created_at)}</span>
-                              </div>
-                            </div>
+                            <AccountCard
+                              key={account.id}
+                              account={account}
+                              onUpdate={(updated) => {
+                                setSelectedUserDetail((prev) =>
+                                  prev
+                                    ? ({ ...prev, accounts: prev.accounts.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)) })
+                                    : prev
+                                )
+                              }}
+                            />
                           ))}
                         </div>
                       ) : (
@@ -1773,4 +1768,67 @@ const getIbBadgeClass = (status: IbStatus) => {
     default:
       return "border-muted-foreground/40 text-muted-foreground"
   }
+}
+
+// Inline component to render an account block and allow editing auto-square percent
+function AccountCard({ account, onUpdate }: { account: AdminUserAccountSummary; onUpdate?: (u: Partial<AdminUserAccountSummary>) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState<number | null>(account.auto_square_percent ?? null)
+  const { toast } = useToast()
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(account.auto_square_percent ?? null)
+  }, [account.auto_square_percent])
+
+  const handleSave = async () => {
+    if (value == null) return setEditing(false)
+      try {
+      setSaving(true)
+      const response = await adminService.setAccountAutoSquarePercent(account.id, Number(value))
+      if (!response.success) throw new Error(response.error?.message || 'Failed to save')
+      toast({ title: 'Saved', description: `Auto square-off set to ${value}%` })
+        if (onUpdate) onUpdate({ id: account.id, auto_square_percent: value } as Partial<AdminUserAccountSummary>)
+      setEditing(false)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Save failed'
+      toast({ variant: 'destructive', title: 'Unable to save', description: msg })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border/40 p-3 text-sm sm:p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="font-semibold">{account.account_number}</div>
+          <div className="text-xs text-muted-foreground">{account.account_type} • Leverage: {account.leverage}x</div>
+        </div>
+        <Badge variant="outline" className="capitalize">{formatStatus(account.status)}</Badge>
+      </div>
+
+      <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2 sm:gap-y-2">
+        <span>Balance: {formatCurrency(Number(account.balance) || 0)}</span>
+        <span>Equity: {formatCurrency(Number(account.equity) || 0)}</span>
+        <span>Free margin: {formatCurrency(Number(account.free_margin) || 0)}</span>
+        <span>Opened: {formatDate(account.created_at)}</span>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        {editing ? (
+          <>
+            <Input type="number" value={value ?? ''} onChange={(e) => setValue(e.target.value === '' ? null : Number(e.target.value))} className="w-32" />
+            <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+            <Button size="sm" variant="outline" onClick={() => { setEditing(false); setValue(account.auto_square_percent ?? null) }}>Cancel</Button>
+          </>
+        ) : (
+          <>
+            <div className="text-sm text-muted-foreground">Auto square-off: {account.auto_square_percent != null ? `${account.auto_square_percent}%` : '—'}</div>
+            <Button size="sm" onClick={() => setEditing(true)}>Edit</Button>
+          </>
+        )}
+      </div>
+    </div>
+  )
 }

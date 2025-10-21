@@ -3,21 +3,17 @@
 const mysql = require('mysql2/promise');
 
 // Database configuration
+
 const dbConfig = {
-  // Active defaults: XAMPP MySQL (root / no password)
-  host: process.env.DB_HOST || '127.0.0.1',
-  port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'pro2',
+  host: '127.0.0.1',
+  port: 3306,
+  user: 'root',
+  password: '',
+  database: 'pro2',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  // Remove deprecated options that cause warnings
-  // acquireTimeout: 60000,     // ← Removed - not valid for connection pool
-  // timeout: 60000,            // ← Removed - not valid for connection pool
-  // reconnect: true,           // ← Removed - not valid for connection pool
-  idleTimeout: 300000,         // 5 minutes idle timeout
+  idleTimeout: 300000,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
   timezone: '+00:00',

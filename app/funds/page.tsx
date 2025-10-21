@@ -197,12 +197,13 @@ export default function FundsPage() {
       return
     }
 
+    let timeoutId: NodeJS.Timeout | null = null;
     try {
       setIsLoading(true)
       console.log('Making API calls for account:', activeAccount.id)
       
       // Set a timeout to ensure loading doesn't hang forever
-      let timeoutId: NodeJS.Timeout | null = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         console.log('API calls timed out, setting loading to false')
         setIsLoading(false)
       }, 10000) // 10 second timeout

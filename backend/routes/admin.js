@@ -485,6 +485,76 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
   });
 }));
 
+// Admin: set auto square-off percent for an account
+router.put('/accounts/:id/auto-square', asyncHandler(async (req, res) => {
+  const accountId = parseInt(req.params.id, 10);
+  const schema = Joi.object({
+    autoSquarePercent: Joi.number().min(0).max(100).required()
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) throw new AppError(error.details[0].message, 400);
+
+  const { autoSquarePercent } = value;
+
+  // Update account
+  await executeQuery('UPDATE trading_accounts SET auto_square_percent = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [autoSquarePercent, accountId]);
+
+  res.json({ success: true, message: `auto_square_percent set to ${autoSquarePercent}% for account ${accountId}` });
+}));
+
+// Admin: update account leverage
+router.put('/accounts/:id/leverage', asyncHandler(async (req, res) => {
+  const accountId = parseInt(req.params.id, 10);
+  const schema = Joi.object({
+    leverage: Joi.number().integer().positive().required()
+  });
+
+  const { error, value } = schema.validate(req.body);
+  if (error) throw new AppError(error.details[0].message, 400);
+
+  const { leverage } = value;
+
+  // Check if account exists
+  const [account] = await executeQuery('SELECT id, user_id, account_type FROM trading_accounts WHERE id = ?', [accountId]);
+  if (!account) {
+    throw new AppError('Trading account not found', 404);
+  }
+
+  // Validate leverage for account type (admin can still override)
+  const LeverageService = require('../services/LeverageService');
+  if (!LeverageService.validateLeverage(leverage, account.account_type)) {
+    console.warn(`Admin setting leverage ${leverage} for ${account.account_type} account (normally not allowed)`);
+  }
+
+  // Update account leverage
+  await executeQuery('UPDATE trading_accounts SET leverage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [leverage, accountId]);
+
+  res.json({
+    success: true,
+    message: `Leverage updated to ${leverage}x for account ${accountId}`,
+    data: { accountId, newLeverage: leverage }
+  });
+}));
+
+// Admin: force-close all positions for an account immediately
+router.put('/accounts/:id/force-close', asyncHandler(async (req, res) => {
+  const accountId = parseInt(req.params.id, 10);
+  const schema = Joi.object({
+    reason: Joi.string().allow(null, '').optional()
+  });
+
+  const { error } = schema.validate(req.body || {});
+  if (error) throw new AppError(error.details[0].message, 400);
+
+  // Use MarginService to force close all positions
+  const MarginService = require('../services/MarginService');
+
+  const result = await MarginService.forceCloseAllPositions(accountId, req.user?.id || null);
+
+  res.json({ success: true, message: `Force-closed ${result.positionsClosed} positions for account ${accountId}`, result });
+}));
+
 // --- Introducing Brokers management (admin) ---
 router.get('/introducing-brokers', asyncHandler(async (req, res) => {
   // Make the query tolerant: some databases may not yet have the `ib_share_percent` column
@@ -809,7 +879,7 @@ router.get('/users/:id', asyncHandler(async (req, res) => {
 
   // Get user's trading accounts
   const accounts = await executeQuery(`
-    SELECT 
+    SELECT
       id,
       account_number,
       account_type,
@@ -820,6 +890,7 @@ router.get('/users/:id', asyncHandler(async (req, res) => {
       leverage,
       currency,
       status,
+      auto_square_percent,
       created_at
     FROM trading_accounts
     WHERE user_id = ?
@@ -2185,6 +2256,7 @@ router.get('/trading/accounts', asyncHandler(async (req, res) => {
       equity: formatNumber(row.equity),
       freeMargin: formatNumber(row.free_margin),
       marginLevel: formatNumber(row.margin_level),
+      auto_square_percent: row.auto_square_percent,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };

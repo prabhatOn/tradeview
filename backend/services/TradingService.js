@@ -100,16 +100,16 @@ class TradingService {
       // Calculate margin required
       const marginRequired = (openPrice * volume) / leverage;
       
-      // Check available margin
+      // Check available margin (use used_margin as the canonical column)
       const account = await executeQuery(`
-        SELECT balance, margin FROM trading_accounts WHERE id = ? AND user_id = ?
+        SELECT balance, margin_used FROM trading_accounts WHERE id = ? AND user_id = ?
       `, [accountId, userId]);
 
       if (!account.length) {
         throw new Error('Trading account not found');
       }
 
-      const availableMargin = account[0].balance - account[0].margin;
+  const availableMargin = account[0].balance - (account[0].margin_used || 0);
       if (availableMargin < marginRequired) {
         throw new Error('Insufficient margin');
       }
@@ -123,12 +123,12 @@ class TradingService {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `, [accountId, symbolId, side, volume, openPrice, openPrice, stopLoss, takeProfit]);
 
-      // Update account margin
+      // Update account used_margin (increase by required margin)
       await executeQuery(`
         UPDATE trading_accounts 
-        SET margin = margin + ?, updated_at = CURRENT_TIMESTAMP
+        SET margin_used = margin_used + ?, used_margin = COALESCE(used_margin, 0) + ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `, [marginRequired, accountId]);
+      `, [marginRequired, marginRequired, accountId]);
 
       // Send notification
       const symbol = await executeQuery('SELECT symbol FROM symbols WHERE id = ?', [symbolId]);
@@ -199,15 +199,15 @@ class TradingService {
       const rawMarginUsed = Number(position.margin_used);
       const marginUsed = Number.isFinite(rawMarginUsed) ? rawMarginUsed : 0;
 
+      // Apply realized P&L once, decrement margin used and keep legacy used_margin in sync.
       await executeQuery(`
-        UPDATE trading_accounts 
-        SET 
-          balance = balance + ?,
-          margin = margin - ?,
-          equity = balance + ?,
-          updated_at = CURRENT_TIMESTAMP
+        UPDATE trading_accounts
+        SET balance = balance + ?,
+            margin_used = GREATEST(COALESCE(margin_used, 0) - ?, 0),
+            used_margin = GREATEST(COALESCE(used_margin, 0) - ?, 0),
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `, [metrics.unrealizedPnl, marginUsed, metrics.unrealizedPnl, position.account_id]);
+      `, [metrics.unrealizedPnl, marginUsed, marginUsed, position.account_id]);
 
       let tradeHistoryId = null;
       let ibCommissionResult = null;

@@ -418,6 +418,10 @@ export const adminService = {
     }
   },
 
+  // Set per-account auto-square-off percent (admin)
+  setAccountAutoSquarePercent: (accountId: number, autoSquarePercent: number): Promise<ApiResponse<void>> =>
+    apiClient.put(`/admin/accounts/${accountId}/auto-square`, { autoSquarePercent }),
+
   getTradingPositions: (params: {
     status?: 'open' | 'closed' | 'all';
     search?: string;

@@ -125,12 +125,13 @@ router.get('/accounts/:accountId', asyncHandler(async (req, res) => {
     leverage: account.leverage,
     status: account.status,
     
-    // Financial metrics
-    balance: account.balance,
-    equity: equity,
-    margin: usedMargin,
-    freeMargin: Math.max(equity - usedMargin, 0),
-    marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
+  // Financial metrics
+  balance: account.balance,
+  equity: equity,
+  margin: usedMargin, // legacy alias used by some frontend components
+  usedMargin: usedMargin,
+  freeMargin: Math.max(equity - usedMargin, 0),
+  marginLevel: usedMargin > 0 ? (equity / usedMargin) * 100 : 0,
     
     // Position info
     totalPositions: openPositionsCount,
@@ -884,53 +885,6 @@ router.get('/leverage-options', asyncHandler(async (req, res) => {
         marginPercentage: (100 / lev).toFixed(2) + '%',
         description: `1:${lev} leverage requires ${(100 / lev).toFixed(2)}% margin`
       }))
-    }
-  });
-}));
-
-// Update account leverage
-router.put('/accounts/:accountId/leverage', asyncHandler(async (req, res) => {
-  const { accountId } = req.params;
-  const { leverage } = req.body;
-  const userId = req.user.id;
-  const LeverageService = require('../services/LeverageService');
-
-  if (!leverage || leverage <= 0) {
-    throw new AppError('Invalid leverage value', 400);
-  }
-
-  const account = await TradingAccount.findByIdAndUserId(parseInt(accountId), userId);
-  if (!account) {
-    throw new AppError('Trading account not found', 404);
-  }
-
-  // Check if account has open positions
-  const openPositions = await executeQuery(
-    'SELECT COUNT(*) as count FROM positions WHERE account_id = ? AND status = "open"',
-    [accountId]
-  );
-
-  if (openPositions[0].count > 0) {
-    throw new AppError('Cannot change leverage with open positions', 400);
-  }
-
-  // Validate leverage for account type
-  if (!LeverageService.validateLeverage(leverage, account.account_type)) {
-    throw new AppError(`Leverage ${leverage} not available for ${account.account_type} account`, 400);
-  }
-
-  // Update leverage
-  await executeQuery(
-    'UPDATE trading_accounts SET leverage = ?, max_leverage = ? WHERE id = ?',
-    [leverage, leverage, accountId]
-  );
-
-  res.json({
-    success: true,
-    message: 'Leverage updated successfully',
-    data: {
-      accountId: parseInt(accountId),
-      newLeverage: leverage
     }
   });
 }));

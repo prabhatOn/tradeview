@@ -157,6 +157,7 @@ export interface AdminUserAccountSummary {
   currency: string;
   status: string;
   created_at: string;
+  auto_square_percent?: number | null;
 }
 
 export interface AdminUserActivityItem {

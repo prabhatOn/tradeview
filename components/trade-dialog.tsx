@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { TrendingUp, TrendingDown, Loader2, Calculator, AlertTriangle, Info } from "lucide-react"
+import { TrendingUp, TrendingDown, Loader2, Calculator, Info } from "lucide-react"
 import { useTrading } from "@/contexts/TradingContext"
 import { useToast } from "@/hooks/use-toast"
 import { enhancedTradingService } from "@/lib/services"
@@ -173,10 +173,6 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
     if (newMarginUsed === 0) return 100
     return (equity / newMarginUsed) * 100
   }, [marginInfo, requiredMargin])
-
-  const wouldTriggerMarginCall = marginLevelAfterTrade && marginLevelAfterTrade < 50
-  const wouldTriggerStopOut = marginLevelAfterTrade && marginLevelAfterTrade < 20
-
 
   const handlePlaceOrder = async () => {
     if (!activeAccount && (!accounts || accounts.length === 0)) {
@@ -350,11 +346,7 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
                       <>
                         <div>
                           <p className="text-muted-foreground">Margin Level After</p>
-                          <p className={`font-mono font-semibold ${
-                            wouldTriggerStopOut ? 'text-red-500' : 
-                            wouldTriggerMarginCall ? 'text-yellow-500' : 
-                            'text-green-500'
-                          }`}>
+                          <p className="font-mono font-semibold text-green-500">
                             {marginLevelAfterTrade.toFixed(1)}%
                           </p>
                         </div>
@@ -367,22 +359,6 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
                       </>
                     )}
                   </div>
-                  {wouldTriggerStopOut && (
-                    <div className="flex items-center gap-2 mt-2 p-2 rounded bg-red-500/10 border border-red-500/20">
-                      <AlertTriangle className="h-4 w-4 text-red-500" />
-                      <span className="text-xs text-red-500">
-                        Warning: This trade would trigger stop out (Level &lt; 20%)
-                      </span>
-                    </div>
-                  )}
-                  {wouldTriggerMarginCall && !wouldTriggerStopOut && (
-                    <div className="flex items-center gap-2 mt-2 p-2 rounded bg-yellow-500/10 border border-yellow-500/20">
-                      <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                      <span className="text-xs text-yellow-500">
-                        Warning: This trade would trigger margin call (Level &lt; 50%)
-                      </span>
-                    </div>
-                  )}
                 </Card>
               )}
 
