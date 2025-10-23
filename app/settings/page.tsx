@@ -26,7 +26,7 @@ import KycDocuments from "@/components/settings/kyc-documents"
 import BankDetailsList from "@/components/settings/bank-details-list"
 import ChangePasswordForm from "@/components/settings/change-password-form"
 
-type SettingsSection = 'account' | 'security' | 'kyc' | 'bank' | 'notifications' | 'appearance' | 'api';
+type SettingsSection = 'account' | 'security' | 'kyc' | 'bank';
 
 // --- REUSABLE COMPONENTS ---
 const SettingsCard: FC<{ title: string; description: string; children: ReactNode }> = ({ title, description, children }) => (
@@ -169,20 +169,14 @@ export default function SettingsPage() {
       case 'kyc': return <KycSettings />;
       case 'bank': return <BankSettings />;
       case 'security': return <SecuritySettings />;
-      case 'notifications': return <NotificationSettings />;
-      case 'appearance': return <AppearanceSettings />;
-      case 'api': return <ApiSettings />;
       default: return <SecuritySettings />;
     }
   };
-  
+
   const navItems = [
     { id: 'kyc', label: 'KYC Verification', icon: <FileText size={18} /> },
     { id: 'bank', label: 'Bank Details', icon: <Building2 size={18} /> },
     { id: 'security', label: 'Security', icon: <Shield size={18} /> },
-    { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
-    { id: 'appearance', label: 'Appearance', icon: <Palette size={18} /> },
-    { id: 'api', label: 'API', icon: <Code size={18} /> },
   ];
 
   return (
