@@ -466,6 +466,12 @@ router.post('/positions', asyncHandler(async (req, res) => {
       [tradingAccount.id, symbolId, null, side, lotSize, openPrice, stopLoss || null, takeProfit || null, 0, comment, 'limit', triggerPrice]
     );
 
+    // Update the order_id to be the same as the position id for tracking
+    await executeQuery(
+      'UPDATE positions SET order_id = ? WHERE id = ?',
+      [insert.insertId, insert.insertId]
+    );
+
     const created = await executeQuery(
       `SELECT p.*, s.contract_size, s.pip_size, ta.account_number, s.symbol FROM positions p JOIN symbols s ON p.symbol_id = s.id JOIN trading_accounts ta ON p.account_id = ta.id WHERE p.id = ?`,
       [insert.insertId]

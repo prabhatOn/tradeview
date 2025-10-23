@@ -211,7 +211,7 @@ export default function ApiAccessPage() {
         <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
 
         <main className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full ${
-          sidebarCollapsed ? "pl-20 pr-6 pt-6 pb-6" : "pl-68 pr-6 pt-6 pb-6"
+          sidebarCollapsed ? "sm:pl-20 pl-4 pr-4 sm:pr-6 pt-6 sm:pb-6 pb-28" : "sm:pl-68 pl-4 pr-4 sm:pr-6 pt-6 sm:pb-6 pb-28"
         }`}>
           {loading ? (
             <div className="flex items-center justify-center h-96">
@@ -224,8 +224,8 @@ export default function ApiAccessPage() {
             <div className="w-full">
               {/* API key details + docs */}
               <section className="space-y-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
+                <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
+                  <div className="w-full text-center sm:text-left">
                     <h3 className="text-lg font-semibold">Personal Trading API Key</h3>
                     <p className="text-sm text-muted-foreground">Your personal API key for automated trading</p>
                   </div>
@@ -233,7 +233,7 @@ export default function ApiAccessPage() {
 
                 {apiKey ? (
                   <Card className="p-4">
-                    <div className="flex flex-col sm:flex-row items-start gap-4">
+                    <div className="flex flex-col sm:flex-row items-start gap-4 w-full">
                       <div className="h-10 w-10 rounded-md bg-muted/10 flex items-center justify-center text-muted-foreground shrink-0">
                         <Shield className="h-5 w-5" />
                       </div>
@@ -339,8 +339,8 @@ Content-Type: application/json`}
                           <code className="text-sm">/account</code>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">Get your account information, balance, and trading statistics</p>
-                        <div className="bg-muted/30 p-2 rounded text-xs">
-                          <code>curl -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" http://localhost:3001/api/v1/account</code>
+                        <div className="bg-muted/30 p-2 rounded text-xs overflow-auto">
+                          <code className="whitespace-pre-wrap break-words">curl -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" http://localhost:3001/api/v1/account</code>
                         </div>
                       </div>
 
@@ -351,8 +351,8 @@ Content-Type: application/json`}
                           <code className="text-sm">/positions</code>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">View all your current open positions</p>
-                        <div className="bg-muted/30 p-2 rounded text-xs">
-                          <code>curl -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" http://localhost:3001/api/v1/positions</code>
+                        <div className="bg-muted/30 p-2 rounded text-xs overflow-auto">
+                          <code className="whitespace-pre-wrap break-words">curl -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" http://localhost:3001/api/v1/positions</code>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
                           Query params: <code>?status=open</code>, <code>?symbol=EURUSD</code>
@@ -366,11 +366,8 @@ Content-Type: application/json`}
                           <code className="text-sm">/positions</code>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">Open a new trading position (buy/sell)</p>
-                        <div className="bg-muted/30 p-2 rounded text-xs">
-                          <code className="whitespace-pre-wrap">{`curl -X POST -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" \\
-     -H "Content-Type: application/json" \\
-     -d '{"symbol": "EURUSD", "position_type": "buy", "volume": 0.1, "stop_loss": 1.1200, "take_profit": 1.1300}' \\
-     http://localhost:3001/api/v1/positions`}</code>
+                        <div className="bg-muted/30 p-2 rounded text-xs overflow-auto">
+                          <code className="whitespace-pre-wrap break-words">{`curl -X POST -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" \\n+     -H "Content-Type: application/json" \\n+     -d '{"symbol": "EURUSD", "position_type": "buy", "volume": 0.1, "stop_loss": 1.1200, "take_profit": 1.1300}' \\n+     http://localhost:3001/api/v1/positions`}</code>
                         </div>
                         <div className="mt-2 text-xs">
                           <p className="font-medium mb-1">Required fields:</p>
@@ -394,8 +391,8 @@ Content-Type: application/json`}
                           <code className="text-sm">/positions/{`{id}`}</code>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">Close an existing open position</p>
-                        <div className="bg-muted/30 p-2 rounded text-xs">
-                          <code>curl -X DELETE -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" http://localhost:3001/api/v1/positions/123</code>
+                        <div className="bg-muted/30 p-2 rounded text-xs overflow-auto">
+                          <code className="whitespace-pre-wrap break-words">curl -X DELETE -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" http://localhost:3001/api/v1/positions/123</code>
                         </div>
                       </div>
 
@@ -406,8 +403,8 @@ Content-Type: application/json`}
                           <code className="text-sm">/history</code>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">Get your trading history (closed positions)</p>
-                        <div className="bg-muted/30 p-2 rounded text-xs">
-                          <code>curl -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" "http://localhost:3001/api/v1/history?limit=10"</code>
+                        <div className="bg-muted/30 p-2 rounded text-xs overflow-auto">
+                          <code className="whitespace-pre-wrap break-words">curl -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" "http://localhost:3001/api/v1/history?limit=10"</code>
                         </div>
                       </div>
 
@@ -418,8 +415,8 @@ Content-Type: application/json`}
                           <code className="text-sm">/market/{`{symbol}`}</code>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">Get current market data for a trading symbol</p>
-                        <div className="bg-muted/30 p-2 rounded text-xs">
-                          <code>curl -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" http://localhost:3001/api/v1/market/EURUSD</code>
+                        <div className="bg-muted/30 p-2 rounded text-xs overflow-auto">
+                          <code className="whitespace-pre-wrap break-words">curl -H "X-API-Key: YOUR_KEY" -H "X-API-Secret: YOUR_SECRET" http://localhost:3001/api/v1/market/EURUSD</code>
                         </div>
                       </div>
                     </CardContent>

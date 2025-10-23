@@ -94,9 +94,9 @@ export default function ProfilePage() {
       <div className="flex flex-1 overflow-hidden">
         <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
 
-        <main className={`flex-1 overflow-auto transition-all duration-300 w-full p-8 ${sidebarCollapsed ? 'pl-20' : 'pl-68'}`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
+        <main className={`flex-1 overflow-auto transition-all duration-300 w-full p-4 sm:p-8 pb-28 sm:pb-6 ${sidebarCollapsed ? 'sm:pl-20 pl-4' : 'sm:pl-68 pl-4'}`}>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="w-full text-center sm:text-left">
               <h1 className="text-3xl font-bold">Profile</h1>
               <p className="text-muted-foreground mt-1">Manage your personal information and trading statistics</p>
             </div>
@@ -139,7 +139,7 @@ export default function ProfilePage() {
                 <h3 className="text-lg font-semibold">Personal Information</h3>
                 <p className="text-sm text-muted-foreground mt-1">Manage your personal details</p>
 
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm text-muted-foreground">First Name</label>
                     <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
@@ -216,16 +216,17 @@ export default function ProfilePage() {
                     <p className="text-muted-foreground mb-4">No trading accounts found</p>
                   </div>
                 ) : (
-                  <div className="grid gap-4">
+                  <div className="flex flex-col items-center gap-4">
                     {accounts.map((account) => (
-                      <TradingAccountCard
-                        key={account.id}
-                        account={account}
-                        onViewDetails={(account) => {
-                          setSelectedAccount(account)
-                          setDetailsOpen(true)
-                        }}
-                      />
+                      <div key={account.id} className="w-full max-w-lg">
+                        <TradingAccountCard
+                          account={account}
+                          onViewDetails={(account) => {
+                            setSelectedAccount(account)
+                            setDetailsOpen(true)
+                          }}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
@@ -234,30 +235,32 @@ export default function ProfilePage() {
 
             {/* Right column: KPIs & quick cards */}
             <aside className="space-y-6">
-              <div className="sticky top-24 space-y-4">
+              <div className="space-y-4">
                 <Card className="p-4 bg-card/40 border-border">
-                  <div className="text-xs text-muted-foreground">Trading Accounts</div>
-                  <div className="text-2xl font-extrabold mt-2">{totalAccounts}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{activeAccounts} active</div>
+                  <div className="text-xs text-muted-foreground text-center sm:text-left">Trading Accounts</div>
+                  <div className="text-2xl font-extrabold mt-2 text-center sm:text-left">{totalAccounts}</div>
+                  <div className="text-xs text-muted-foreground mt-1 text-center sm:text-left">{activeAccounts} active</div>
                 </Card>
 
                 <Card className="p-4 bg-card/40 border-border">
-                  <div className="text-xs text-muted-foreground">Total Balance</div>
-                  <div className="text-2xl font-extrabold text-emerald-500 mt-2">{fmt(totalBalance)}</div>
+                  <div className="text-xs text-muted-foreground text-center sm:text-left">Total Balance</div>
+                  <div className="text-2xl font-extrabold text-emerald-500 mt-2 text-center sm:text-left">{fmt(totalBalance)}</div>
                 </Card>
 
                 <Card className="p-4 bg-card/40 border-border">
-                  <div className="text-xs text-muted-foreground">Total Equity</div>
-                  <div className="text-2xl font-extrabold text-emerald-500 mt-2">{fmt(totalEquity)}</div>
+                  <div className="text-xs text-muted-foreground text-center sm:text-left">Total Equity</div>
+                  <div className="text-2xl font-extrabold text-emerald-500 mt-2 text-center sm:text-left">{fmt(totalEquity)}</div>
                 </Card>
 
                 <Card className="p-4 bg-card/40 border-border">
-                  <div className="text-xs text-muted-foreground">Account Status</div>
-                  <div className="text-2xl font-extrabold mt-2">
+                  <div className="text-xs text-muted-foreground text-center sm:text-left">Account Status</div>
+                  <div className="text-2xl font-extrabold mt-2 text-center sm:text-left">
                     {accounts.length > 0 ? (
-                      <Badge className="text-sm bg-green-500/10 text-green-400">
-                        {activeAccounts === accounts.length ? 'All Active' : `${activeAccounts}/${accounts.length} Active`}
-                      </Badge>
+                      <div className="flex items-center justify-center sm:justify-start">
+                        <Badge className="text-sm bg-green-500/10 text-green-400">
+                          {activeAccounts === accounts.length ? 'All Active' : `${activeAccounts}/${accounts.length} Active`}
+                        </Badge>
+                      </div>
                     ) : (
                       <span className="text-muted-foreground text-base">No Accounts</span>
                     )}
@@ -311,19 +314,19 @@ export default function ProfilePage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-3 rounded-md border border-border bg-card/50">
                       <div className="text-xs text-muted-foreground">Balance</div>
-                      <div className="text-lg font-bold">{fmt(selectedAccount.balance)}</div>
+                      <div className={`text-base font-semibold ${selectedAccount.balance < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmt(selectedAccount.balance)}</div>
                     </div>
                     <div className="p-3 rounded-md border border-border bg-card/50">
                       <div className="text-xs text-muted-foreground">Equity</div>
-                      <div className="text-lg font-bold">{fmt(selectedAccount.equity)}</div>
+                      <div className={`text-base font-semibold ${selectedAccount.equity < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmt(selectedAccount.equity)}</div>
                     </div>
                     <div className="p-3 rounded-md border border-border bg-card/50">
                       <div className="text-xs text-muted-foreground">Free Margin</div>
-                      <div className="text-lg font-bold">{fmt(selectedAccount.freeMargin)}</div>
+                      <div className={`text-base font-semibold ${selectedAccount.freeMargin > 0 ? 'text-emerald-400' : (selectedAccount.freeMargin < 0 ? 'text-red-400' : 'text-muted-foreground')}`}>{fmt(selectedAccount.freeMargin)}</div>
                     </div>
                     <div className="p-3 rounded-md border border-border bg-card/50">
                       <div className="text-xs text-muted-foreground">Margin Level</div>
-                      <div className="text-lg font-bold">{selectedAccount.marginLevel.toFixed(2)}%</div>
+                      <div className={`text-base font-semibold ${(selectedAccount.marginLevel || 0) >= 100 ? 'text-emerald-400' : (selectedAccount.marginLevel || 0) >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{(selectedAccount.marginLevel || 0).toFixed(2)}%</div>
                     </div>
                   </div>
                 </div>

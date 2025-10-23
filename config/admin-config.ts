@@ -43,10 +43,16 @@ export const adminSidebarItems: SidebarItem[] = [
     description: "Customer support management"
   },
   {
-    title: "Deposits/Withdrawals",
+    title: "Deposits",
     icon: CreditCard,
-    href: "/admin/deposits-withdrawals",
-    description: "Transaction management"
+    href: "/admin/deposits",
+    description: "Deposit transaction management"
+  },
+  {
+    title: "Withdrawals",
+    icon: Wallet,
+    href: "/admin/withdrawals",
+    description: "Withdrawal transaction management"
   },
   {
     title: "Introducing Brokers",

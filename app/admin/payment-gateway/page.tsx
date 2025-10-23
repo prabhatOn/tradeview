@@ -690,36 +690,38 @@ export default function PaymentGatewayPage() {
     <AdminLayout sidebarItems={adminSidebarItems} topBarConfig={adminTopBarConfig}>
       <div className="space-y-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold text-foreground leading-tight">
               Payment Gateway & Bank Accounts
             </h1>
             <p className="text-muted-foreground mt-2">
               Manage payment gateways and bank account configurations
             </p>
           </div>
-          <div className="flex items-center space-x-3">
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-background/60 backdrop-blur-sm border-border/20"
-              onClick={handleRefresh}
-              disabled={isLoading}
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-              {isLoading ? "Refreshing" : "Refresh data"}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="bg-background/60 backdrop-blur-sm border border-border/20"
-              onClick={() => fetchData()}
-              disabled={isLoading}
-            >
-              <Zap className="h-4 w-4 mr-2" />
-              Test all gateways
-            </Button>
+          <div className="w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto bg-background/60 backdrop-blur-sm border-border/20"
+                onClick={handleRefresh}
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                {isLoading ? "Refreshing" : "Refresh data"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full sm:w-auto bg-background/60 backdrop-blur-sm border border-border/20"
+                onClick={() => fetchData()}
+                disabled={isLoading}
+              >
+                <Zap className="h-4 w-4 mr-2" />
+                Test all gateways
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -820,32 +822,40 @@ export default function PaymentGatewayPage() {
         <Card className="bg-card/40 backdrop-blur-xl border border-border/20 shadow-lg">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <CardHeader className="pb-0">
-              <TabsList className="grid w-full grid-cols-2 bg-muted/30 backdrop-blur-sm">
-                <TabsTrigger value="gateways" className="flex items-center space-x-2">
-                  <Wallet className="h-4 w-4" />
-                  <span>Payment Gateways ({paymentGateways.length})</span>
-                </TabsTrigger>
-                <TabsTrigger value="banks" className="flex items-center space-x-2">
-                  <Building className="h-4 w-4" />
-                  <span>Bank Accounts ({bankAccounts.length})</span>
-                </TabsTrigger>
-              </TabsList>
+                <div className="-mx-6 px-6 sm:mx-0 sm:px-0">
+                <div className="overflow-x-auto">
+                  <TabsList className="overflow-x-auto px-2 py-1 sm:overflow-visible sm:px-0 bg-muted/30 backdrop-blur-sm">
+                    <div className="inline-flex gap-2 whitespace-nowrap min-w-max sm:grid sm:grid-cols-2 sm:gap-0 sm:min-w-0">
+                      <TabsTrigger value="gateways" className="flex items-center space-x-2 whitespace-nowrap px-2 py-1 text-xs sm:text-sm max-w-[34vw] sm:max-w-none truncate">
+                        <Wallet className="h-3 w-3 sm:h-4 sm:w-4" />
+                        <span className="truncate min-w-0">Payment Gateways ({paymentGateways.length})</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="banks" className="flex items-center space-x-2 whitespace-nowrap px-2 py-1 text-xs sm:text-sm max-w-[34vw] sm:max-w-none truncate">
+                        <Building className="h-3 w-3 sm:h-4 sm:w-4" />
+                        <span className="truncate min-w-0">Bank Accounts ({bankAccounts.length})</span>
+                      </TabsTrigger>
+                    </div>
+                  </TabsList>
+                </div>
+              </div>
             </CardHeader>
 
             <CardContent className="pt-6">
               {/* Payment Gateways Tab */}
               <TabsContent value="gateways" className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="min-w-0">
                     <h3 className="text-xl font-semibold text-foreground">Payment Gateways</h3>
                     <p className="text-sm text-muted-foreground mt-1">
                       Manage payment processing integrations
                     </p>
                   </div>
-                  <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => openGatewayDialog()}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Gateway
-                  </Button>
+                  <div className="w-full sm:w-auto">
+                    <Button className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white justify-center" onClick={() => openGatewayDialog()}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Gateway
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="rounded-lg border border-border/20 overflow-hidden bg-background/30 backdrop-blur-sm">
@@ -958,17 +968,19 @@ export default function PaymentGatewayPage() {
 
               {/* Bank Accounts Tab */}
               <TabsContent value="banks" className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="min-w-0">
                     <h3 className="text-xl font-semibold text-foreground">Bank Accounts</h3>
                     <p className="text-sm text-muted-foreground mt-1">
                       Manage bank account configurations
                     </p>
                   </div>
-                  <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => openBankDialog()}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Bank Account
-                  </Button>
+                  <div className="w-full sm:w-auto">
+                    <Button className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white justify-center" onClick={() => openBankDialog()}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Bank Account
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="rounded-lg border border-border/20 overflow-hidden bg-background/30 backdrop-blur-sm">

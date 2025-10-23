@@ -1,15 +1,14 @@
 "use client"
 
-import { useState, FC, ReactNode, useEffect } from "react"
+import { useState, FC, ReactNode } from "react"
 import { useSidebarCollapsed } from '@/hooks/use-sidebar-collapsed'
-import { useAuth } from '@/hooks/use-auth'
 import { TradingSidebar } from "@/components/trading-sidebar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+ 
 import { Switch } from "@/components/ui/switch"
 import {
-  User,
+  
   Shield,
   Bell,
   Palette,
@@ -27,7 +26,7 @@ import KycDocuments from "@/components/settings/kyc-documents"
 import BankDetailsList from "@/components/settings/bank-details-list"
 import ChangePasswordForm from "@/components/settings/change-password-form"
 
-type SettingsSection = 'profile' | 'account' | 'security' | 'kyc' | 'bank' | 'notifications' | 'appearance' | 'api';
+type SettingsSection = 'account' | 'security' | 'kyc' | 'bank' | 'notifications' | 'appearance' | 'api';
 
 // --- REUSABLE COMPONENTS ---
 const SettingsCard: FC<{ title: string; description: string; children: ReactNode }> = ({ title, description, children }) => (
@@ -50,7 +49,7 @@ const SettingsNavItem: FC<{
 }> = ({ icon, label, isActive, onClick }) => (
   <button
     onClick={onClick}
-    className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+    className={`w-auto lg:w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
       isActive
         ? 'bg-primary/10 text-primary'
         : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -62,42 +61,6 @@ const SettingsNavItem: FC<{
 );
 
 // --- SETTINGS SECTION COMPONENTS ---
-const ProfileSettings = () => {
-    const { user, isLoading } = useAuth();
-    const [firstName, setFirstName] = useState('');
-    const [lastName, setLastName] = useState('');
-    const [email, setEmail] = useState('');
-    const [phone, setPhone] = useState('');
-
-    // Update form data when user data loads
-    useEffect(() => {
-        if (user && !isLoading) {
-      setFirstName(user.first_name ?? user.firstName ?? '');
-      setLastName(user.last_name ?? user.lastName ?? '');
-            setEmail(user.email || '');
-            setPhone(user.phone || '');
-        }
-    }, [user, isLoading]);
-
-    return (
-        <div className="space-y-6">
-            <SettingsCard title="Personal Information" description="Update your personal details here.">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><label className="text-sm font-medium">First Name</label><Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder={isLoading ? "Loading..." : "First Name"} /></div>
-                    <div><label className="text-sm font-medium">Last Name</label><Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder={isLoading ? "Loading..." : "Last Name"} /></div>
-                </div>
-                <div><label className="text-sm font-medium">Email Address</label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={isLoading ? "Loading..." : "Email"} /></div>
-                <div><label className="text-sm font-medium">Phone Number</label><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={isLoading ? "Loading..." : "Phone Number"} /></div>
-            </SettingsCard>
-            <SettingsCard title="Address Information" description="Ensure your billing and mailing address is up to date.">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><label className="text-sm font-medium">Country</label><Input defaultValue="United States" /></div>
-                    <div><label className="text-sm font-medium">City</label><Input defaultValue="New York" /></div>
-                </div>
-            </SettingsCard>
-        </div>
-    );
-};
 
 const SecuritySettings = () => (
     <div className="space-y-6">
@@ -198,24 +161,22 @@ const BankSettings = () => {
 // --- MAIN PAGE COMPONENT ---
 export default function SettingsPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(false);
-  const [activeSection, setActiveSection] = useState<SettingsSection>('profile');
+  const [activeSection, setActiveSection] = useState<SettingsSection>('security');
   const { toast } = useToast();
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'profile': return <ProfileSettings />;
       case 'kyc': return <KycSettings />;
       case 'bank': return <BankSettings />;
       case 'security': return <SecuritySettings />;
       case 'notifications': return <NotificationSettings />;
       case 'appearance': return <AppearanceSettings />;
       case 'api': return <ApiSettings />;
-      default: return <ProfileSettings />;
+      default: return <SecuritySettings />;
     }
   };
   
   const navItems = [
-    { id: 'profile', label: 'Profile', icon: <User size={18} /> },
     { id: 'kyc', label: 'KYC Verification', icon: <FileText size={18} /> },
     { id: 'bank', label: 'Bank Details', icon: <Building2 size={18} /> },
     { id: 'security', label: 'Security', icon: <Shield size={18} /> },
@@ -229,10 +190,10 @@ export default function SettingsPage() {
       <div className="flex flex-1 overflow-hidden">
         <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
 
-        <main className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full p-6 ${sidebarCollapsed ? "pl-20" : "pl-68"}`}>
+        <main className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full p-4 sm:p-6 pb-28 sm:pb-6 ${sidebarCollapsed ? "sm:pl-20 pl-4" : "sm:pl-68 pl-4"}`}>
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="w-full text-center sm:text-left">
               <h1 className="text-2xl font-bold">Settings</h1>
               <p className="text-muted-foreground">Manage your account preferences and security settings.</p>
             </div>
@@ -245,7 +206,7 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
             {/* Left Navigation */}
             <aside className="lg:col-span-1">
-              <div className="p-2 rounded-lg bg-card/50 border border-border/80 space-y-1">
+          <div className="p-2 rounded-lg bg-card/50 border border-border/80 flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-visible">
                  {navItems.map(item => (
                     <SettingsNavItem
                         key={item.id}

@@ -374,8 +374,8 @@ export default function AdminDashboard() {
         topBarConfig={adminTopBarConfig}
       >
         <div className="space-y-8">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-3 sm:mb-0">
               <h1 className="text-3xl font-bold text-foreground">
                 Dashboard Overview
               </h1>
@@ -388,7 +388,7 @@ export default function AdminDashboard() {
                 </p>
               )}
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3 flex-wrap">
               {healthUpdatedLabel && (
                 <span className="text-xs text-muted-foreground hidden sm:inline">
                   Updated {healthUpdatedLabel}
@@ -429,7 +429,7 @@ export default function AdminDashboard() {
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {isLoading
               ? Array.from({ length: 4 }).map((_, index) => (
                   <Card key={`stats-skeleton-${index}`} className="bg-card/40 backdrop-blur-xl border-border/20 shadow-lg">
@@ -483,16 +483,16 @@ export default function AdminDashboard() {
                 })}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="bg-card/40 backdrop-blur-xl border-border/20 shadow-lg">
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center">
                     <Activity className="h-4 w-4 mr-2" />
                     Insights
                   </CardTitle>
                   {healthUpdatedLabel && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-muted-foreground mt-2 sm:mt-0">
                       {healthUpdatedLabel}
                     </span>
                   )}
@@ -556,27 +556,27 @@ export default function AdminDashboard() {
                     const severity = deriveSeverity(alert.type)
                     const timestampLabel = formatRelativeTimestamp(alert.timestamp)
                     return (
-                      <div className="flex items-center justify-between" key={`${alert.title}-${index}`}>
-                        <div className="flex items-center space-x-2">
-                          <div className={clsx("h-2 w-2 rounded-full", severityDotStyles[severity])} />
-                          <div>
-                            <p className="text-sm text-foreground">{alert.title}</p>
-                            {alert.description && (
-                              <p className="text-xs text-muted-foreground">{alert.description}</p>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-2" key={`${alert.title}-${index}`}>
+                          <div className="flex items-start sm:items-center space-x-2 min-w-0">
+                            <div className={clsx("h-2 w-2 rounded-full mt-1 sm:mt-0", severityDotStyles[severity])} />
+                            <div className="min-w-0">
+                              <p className="text-sm text-foreground">{alert.title}</p>
+                              {alert.description && (
+                                <p className="text-xs text-muted-foreground">{alert.description}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="mt-2 sm:mt-0 text-right flex-shrink-0">
+                            {alert.value !== undefined && (
+                              <p className="text-sm font-semibold text-foreground">
+                                {numberFormatter.format(alert.value)}
+                              </p>
+                            )}
+                            {timestampLabel && (
+                              <p className="text-xs text-muted-foreground">{timestampLabel}</p>
                             )}
                           </div>
                         </div>
-                        <div className="text-right">
-                          {alert.value !== undefined && (
-                            <p className="text-sm font-semibold text-foreground">
-                              {numberFormatter.format(alert.value)}
-                            </p>
-                          )}
-                          {timestampLabel && (
-                            <p className="text-xs text-muted-foreground">{timestampLabel}</p>
-                          )}
-                        </div>
-                      </div>
                     )
                   })
                 ) : (
@@ -588,19 +588,19 @@ export default function AdminDashboard() {
 
           <Card className="bg-card/40 backdrop-blur-xl border border-border/20 shadow-lg">
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-xl text-foreground">Recent System Activity</CardTitle>
-                <div className="flex items-center space-x-2">
-                  <div className="relative">
+                <div className="flex items-center space-x-2 mt-3 sm:mt-0">
+                  <div className="relative w-full sm:w-64">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
                       placeholder="Search activities..."
-                      className="pl-10 w-64 bg-background/60 backdrop-blur-sm border-border/20"
+                      className="pl-10 w-full sm:w-64 bg-background/60 backdrop-blur-sm border-border/20"
                     />
                   </div>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="flex-shrink-0">
                     <Settings className="h-4 w-4" />
                   </Button>
                 </div>
@@ -635,22 +635,24 @@ export default function AdminDashboard() {
                         key={`${activity.type}-${index}-${activity.timestamp}`}
                         className="flex items-center justify-between p-4 rounded-lg hover:bg-muted/50 transition-all duration-200 border border-transparent hover:border-border/20"
                       >
-                        <div className="flex items-center space-x-4">
-                          <div className={clsx("h-10 w-10 rounded-full flex items-center justify-center", circleClass)}>
-                            <IconComponent className="h-4 w-4" />
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full">
+                          <div className="flex items-start sm:items-center space-x-4 min-w-0">
+                            <div className={clsx("h-10 w-10 rounded-full flex items-center justify-center", circleClass)}>
+                              <IconComponent className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-foreground">{activity.action}</p>
+                              <p className="text-sm text-muted-foreground">{activity.subject}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium text-foreground">{activity.action}</p>
-                            <p className="text-sm text-muted-foreground">{activity.subject}</p>
+                          <div className="mt-2 sm:mt-0 text-right flex-shrink-0">
+                            {relativeTime && (
+                              <p className="text-sm text-muted-foreground">{relativeTime}</p>
+                            )}
+                            <Badge variant="outline" className={clsx("mt-1 capitalize", badgeClass)}>
+                              {activity.type}
+                            </Badge>
                           </div>
-                        </div>
-                        <div className="text-right">
-                          {relativeTime && (
-                            <p className="text-sm text-muted-foreground">{relativeTime}</p>
-                          )}
-                          <Badge variant="outline" className={clsx("mt-1 capitalize", badgeClass)}>
-                            {activity.type}
-                          </Badge>
                         </div>
                       </div>
                     )

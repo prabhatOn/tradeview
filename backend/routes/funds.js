@@ -50,8 +50,11 @@ router.get('/account/:accountId/balance', asyncHandler(async (req, res) => {
   const openPositionsCount = await account.getOpenPositionsCount();
   const unrealizedPnL = await account.getUnrealizedPnL();
   
-  // Calculate current equity
+  // Calculate current equity and margin metrics
   const equity = account.balance + unrealizedPnL;
+  const usedMargin = await account.getUsedMargin();
+  const freeMargin = Math.max(equity - usedMargin, 0);
+  const marginLevel = usedMargin > 0 ? (equity / usedMargin) * 100 : 0;
   
   res.json({
     success: true,
@@ -62,8 +65,9 @@ router.get('/account/:accountId/balance', asyncHandler(async (req, res) => {
       // Current balances
       balance: account.balance,
       equity: equity,
-      freeMargin: equity,
-      marginLevel: 0,
+      usedMargin: usedMargin,
+      freeMargin: freeMargin,
+      marginLevel: marginLevel,
       
       // Position metrics
       openPositions: openPositionsCount,
@@ -268,9 +272,9 @@ router.get('/dashboard/performance/:accountId', asyncHandler(async (req, res) =>
     // Account metrics
     balance: account.balance,
     equity: equity,
-    usedMargin: account.usedMargin || 0,
-    freeMargin: account.freeMargin || equity,
-    marginLevel: account.marginLevel || 0,
+    usedMargin: usedMargin,
+    freeMargin: freeMargin,
+    marginLevel: marginLevel,
     openPositions: parseInt(unrealizedResult.open_positions || 0)
   };
 

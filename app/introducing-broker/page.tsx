@@ -1057,9 +1057,9 @@ export default function IntroducingBrokerPageV2() {
       <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
       <Toaster />
       <div className="flex-1">
-        <main className="mx-auto w-full max-w-[1400px] space-y-8 px-4 py-10 sm:px-6 lg:px-12">
+        <main className="mx-auto w-full max-w-[1400px] space-y-8 px-4 py-10 sm:px-6 lg:px-12 pb-28 sm:pb-6">
           <div className="flex flex-wrap items-start justify-between gap-6">
-            <div>
+            <div className="w-full text-center sm:text-left">
               <h1 className="text-3xl font-semibold tracking-tight text-foreground">Introducing Broker Portal</h1>
               <p className="text-muted-foreground">Monitor your clients, commissions, and referral performance in real time.</p>
             </div>
@@ -1074,7 +1074,7 @@ export default function IntroducingBrokerPageV2() {
             </div>
           </div>
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="bg-card/80">
               <CardHeader>
                 <CardTitle>Total Clients</CardTitle>
@@ -1199,7 +1199,7 @@ export default function IntroducingBrokerPageV2() {
               </Button>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-6 grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
               {referralCodes.length === 0 && !referralLoading ? (
                 <div className="md:col-span-2 xl:col-span-3 rounded-2xl border border-dashed border-border/60 bg-muted/10 p-8 text-center text-sm text-muted-foreground">
                   No referral codes yet. Generate your first link to start onboarding clients.

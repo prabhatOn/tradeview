@@ -20,26 +20,26 @@ import {
   Plus,
   Edit,
   Save,
-  RefreshCw,
-  Settings,
   DollarSign,
+  Calculator,
   Percent,
   BarChart3,
-  Calculator,
   Target,
-  CheckCircle,
+  RefreshCw,
   Loader2,
+  Settings,
+  CheckCircle
 } from "lucide-react"
-import { adminService } from "@/lib/services"
+import { useToast } from '@/hooks/use-toast'
+import { adminService } from '@/lib/services'
 import {
-  AdminBrokerageUpdatePayload,
   AdminSymbolChargeRow,
   AdminTradingChargesResponseData,
   AdminTradingUserLeverageRow,
   AdminTradingUserLeverageResponse,
+  AdminBrokerageUpdatePayload,
   PaginationInfo
-} from "@/lib/types"
-import { useToast } from "@/hooks/use-toast"
+} from '@/lib/types'
 
 // sidebar and topbar come from shared config
 
@@ -121,8 +121,6 @@ function TradesChargesContent() {
   const [liveLeverage, setLiveLeverage] = useState("100")
   const [standardCommission, setStandardCommission] = useState("0")
   const [standardSpread, setStandardSpread] = useState("0")
-  const [vipCommission, setVipCommission] = useState("0")
-  const [vipSpread, setVipSpread] = useState("0")
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [editingSymbolId, setEditingSymbolId] = useState<number | null>(null)
   const [editedSymbolValues, setEditedSymbolValues] = useState<EditingSymbolState | null>(null)
@@ -157,13 +155,8 @@ function TradesChargesContent() {
 
       const standardCommissionValue = data.brokerage?.standard?.commission ?? 0
       const standardSpreadValue = data.brokerage?.standard?.spreadMarkup ?? 0
-      const vipCommissionValue = data.brokerage?.vip?.commission ?? 0
-      const vipSpreadValue = data.brokerage?.vip?.spreadMarkup ?? 0
-
-      setStandardCommission(formatNumber(standardCommissionValue, 2))
-      setStandardSpread(formatNumber(standardSpreadValue, 2))
-      setVipCommission(formatNumber(vipCommissionValue, 2))
-      setVipSpread(formatNumber(vipSpreadValue, 2))
+  setStandardCommission(formatNumber(standardCommissionValue, 2))
+  setStandardSpread(formatNumber(standardSpreadValue, 2))
       setDemoLeverage(formatNumber(data.leverage?.defaultLeverage ?? 100, 0))
       setLiveLeverage(formatNumber(data.leverage?.maxLeverage ?? 100, 0))
     } catch (error: unknown) {
@@ -341,16 +334,13 @@ function TradesChargesContent() {
   const handleSaveAll = async () => {
     const standardCommissionValue = parseInputValue(standardCommission)
     const standardSpreadValue = parseInputValue(standardSpread)
-    const vipCommissionValue = parseInputValue(vipCommission)
-    const vipSpreadValue = parseInputValue(vipSpread)
+  
     const defaultLeverageValue = parseInputValue(demoLeverage)
     const maxLeverageValue = parseInputValue(liveLeverage)
 
     if (
       standardCommissionValue === null ||
       standardSpreadValue === null ||
-      vipCommissionValue === null ||
-      vipSpreadValue === null ||
       defaultLeverageValue === null ||
       maxLeverageValue === null
     ) {
@@ -370,12 +360,7 @@ function TradesChargesContent() {
         commissionUnit: "per_lot",
         spreadUnit: "pips"
       },
-      vip: {
-        commission: vipCommissionValue,
-        spreadMarkup: vipSpreadValue,
-        commissionUnit: "per_lot",
-        spreadUnit: "pips"
-      }
+      // VIP brokerage removed from frontend; keep payload minimal
     }
 
     setSaving(true)
@@ -520,21 +505,21 @@ function TradesChargesContent() {
   return (
     <AdminLayout sidebarItems={adminSidebarItems} topBarConfig={adminTopBarConfig}>
       <div className="space-y-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Trades & Charges</h1>
-            <p className="text-muted-foreground mt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="hidden sm:block text-3xl font-bold text-foreground">Trades & Charges</h1>
+            <p className="hidden sm:block text-muted-foreground mt-2 max-w-md break-words">
               Manage real trading charges, spreads, commissions, and leverage policies
             </p>
             {errorMessage ? (
               <p className="mt-2 text-sm text-destructive">{errorMessage}</p>
             ) : null}
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex w-full sm:w-auto flex-col sm:flex-row sm:items-center sm:space-x-3 gap-2">
             <Button
               variant="outline"
               size="sm"
-              className="bg-background/60 backdrop-blur-sm border-border/20"
+              className="w-full sm:w-auto bg-background/60 backdrop-blur-sm border-border/20"
               onClick={handleRefresh}
               disabled={refreshing || loading}
             >
@@ -542,7 +527,7 @@ function TradesChargesContent() {
               Refresh
             </Button>
             <Button
-              className="bg-green-600 hover:bg-green-700 text-white shadow-lg backdrop-blur-sm"
+              className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white shadow-lg backdrop-blur-sm"
               onClick={handleSaveAll}
               disabled={saving || loading || refreshing}
             >
@@ -628,49 +613,47 @@ function TradesChargesContent() {
             <Card className="bg-card/40 backdrop-blur-xl border border-border/20 shadow-lg">
               <Tabs defaultValue="charges" className="w-full">
                 <CardHeader className="pb-0">
-                  <TabsList className="grid w-full grid-cols-3 bg-muted/30 backdrop-blur-sm">
-                    <TabsTrigger value="charges" className="flex items-center space-x-2">
-                      <DollarSign className="h-4 w-4" />
-                      <span>Charges</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="brokerage" className="flex items-center space-x-2">
-                      <Calculator className="h-4 w-4" />
-                      <span>Brokerage</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="leverage" className="flex items-center space-x-2">
-                      <Users className="h-4 w-4" />
-                      <span>User Leverage</span>
-                    </TabsTrigger>
-                  </TabsList>
+                  {/* Tabs: horizontal scroll on xs, grid on sm+ */}
+                  <div className="relative">
+                    <TabsList className="flex gap-2 overflow-x-auto whitespace-nowrap py-1 px-1 rounded-md bg-muted/30 backdrop-blur-sm sm:grid sm:grid-cols-3 sm:gap-0 sm:overflow-visible">
+                      <TabsTrigger value="charges" className="flex items-center gap-2 px-2 py-1 text-xs sm:text-base rounded-md flex-shrink-0">
+                        <DollarSign className="h-4 w-4 sm:h-4 sm:w-4" />
+                        <span className="hidden xs:hidden sm:inline truncate">Charges</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="brokerage" className="flex items-center gap-2 px-2 py-1 text-xs sm:text-base rounded-md flex-shrink-0">
+                        <Calculator className="h-4 w-4 sm:h-4 sm:w-4" />
+                        <span className="hidden xs:hidden sm:inline truncate">Brokerage</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="leverage" className="flex items-center gap-2 px-2 py-1 text-xs sm:text-base rounded-md flex-shrink-0">
+                        <Users className="h-4 w-4 sm:h-4 sm:w-4" />
+                        <span className="hidden xs:hidden sm:inline truncate">User Leverage</span>
+                      </TabsTrigger>
+                    </TabsList>
+                    {/* right fade to indicate more tabs on overflow */}
+                    <div className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-background/90 to-transparent"></div>
+                  </div>
                 </CardHeader>
 
                 <CardContent className="pt-6">
                   <TabsContent value="charges" className="space-y-6">
-                    <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-semibold text-foreground flex items-center">
-                          <DollarSign className="h-5 w-5 mr-2" />
-                          Trading Charges
-                        </h3>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Configure swap rates, spreads, and commissions for each symbol
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            placeholder="Search symbols..."
-                            className="pl-10 w-64 bg-background/60 backdrop-blur-sm border-border/20"
-                            disabled
-                          />
+                        <div className="flex w-full items-center justify-end">
+                          <div className="flex w-full sm:w-auto items-center sm:justify-end gap-2 flex-col sm:flex-row">
+                            <div className="relative w-full sm:w-auto">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                  placeholder="Search symbols..."
+                                  className="pl-10 w-full sm:w-64 md:w-64 lg:w-64 bg-background/60 backdrop-blur-sm border-border/20"
+                                  disabled
+                                />
+                            </div>
+                            <Button variant="outline" size="sm" className="w-10 sm:w-auto h-8 flex items-center justify-center" disabled>
+                              <Plus className="h-4 w-4" />
+                              <span className="hidden sm:inline ml-2">Add Symbol</span>
+                            </Button>
+                          </div>
                         </div>
-                        <Button variant="outline" size="sm" disabled>
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Symbol
-                        </Button>
                       </div>
-                    </div>
 
                     <div className="rounded-lg border border-border/20 overflow-hidden bg-background/30 backdrop-blur-sm">
                       <Table>
@@ -867,7 +850,8 @@ function TradesChargesContent() {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      <Card className="bg-background/50 border-border/20">
+                      <div className="lg:col-span-2">
+                        <Card className="bg-background/50 border-border/20">
                         <CardHeader>
                           <CardTitle className="text-lg text-foreground">Standard Brokerage</CardTitle>
                           <p className="text-sm text-muted-foreground">Default rates for standard accounts</p>
@@ -904,46 +888,8 @@ function TradesChargesContent() {
                             </div>
                           </div>
                         </CardContent>
-                      </Card>
-
-                      <Card className="bg-background/50 border-border/20">
-                        <CardHeader>
-                          <CardTitle className="text-lg text-foreground">VIP Brokerage</CardTitle>
-                          <p className="text-sm text-muted-foreground">Preferred rates for VIP accounts</p>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                          <div className="space-y-2">
-                            <Label htmlFor="vip-commission" className="text-sm font-medium text-foreground">
-                              VIP Commission (per lot)
-                            </Label>
-                            <Input
-                              id="vip-commission"
-                              value={vipCommission}
-                              onChange={(event) => setVipCommission(event.target.value)}
-                              className="bg-background/60 border-border/20"
-                              placeholder="0.30"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="vip-spread" className="text-sm font-medium text-foreground">
-                              VIP Spread (pips)
-                            </Label>
-                            <Input
-                              id="vip-spread"
-                              value={vipSpread}
-                              onChange={(event) => setVipSpread(event.target.value)}
-                              className="bg-background/60 border-border/20"
-                              placeholder="1.00"
-                            />
-                          </div>
-                          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/20">
-                            <div className="flex items-center space-x-3">
-                              <CheckCircle className="h-5 w-5 text-green-600" />
-                              <span className="text-sm font-medium text-foreground">Used for VIP trading accounts</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                        </Card>
+                      </div>
                     </div>
                   </TabsContent>
 

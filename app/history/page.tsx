@@ -20,7 +20,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
-  Filter
+  
 } from "lucide-react"
 import { Position } from "@/lib/types"
 import { normalizePositions, formatPrice, formatPnL, getPnLColor } from "@/lib/utils-trading"
@@ -46,6 +46,8 @@ export default function HistoryPage() {
   const { data: positionsData, isLoading, error, refetch } = usePositions(activeAccount?.id, 'closed')
 
   // State management
+  // setLastUpdate is reserved for WebSocket-driven realtime updates
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [lastUpdate, setLastUpdate] = useState<string>('')
 
   // Filter states
@@ -53,8 +55,9 @@ export default function HistoryPage() {
   const [sideFilter, setSideFilter] = useState('all')
 
   // Process positions data - only closed positions for history
-  const rawPositions = Array.isArray(positionsData) ? positionsData : ((positionsData as any)?.data || [])
-  const positions = normalizePositions(rawPositions)
+  const rawPositions = Array.isArray(positionsData) ? positionsData as unknown[] : ((positionsData as unknown as { data?: unknown[] })?.data || [])
+  const typedRawPositions = rawPositions as Position[]
+  const positions = normalizePositions(typedRawPositions)
   const closedPositions = positions.filter((p: Position) => p.status === 'closed')
 
   // Filter positions
@@ -100,19 +103,8 @@ export default function HistoryPage() {
 
   // Handle real-time updates
   useEffect(() => {
-    const handleWebSocketMessage = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'position_update') {
-          refetch()
-          setLastUpdate(new Date().toLocaleTimeString())
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error)
-      }
-    }
-
     // TODO: Connect to WebSocket for real-time updates
+    // const handleWebSocketMessage = (event: MessageEvent) => { ... }
     // const ws = new WebSocket('ws://localhost:3001')
     // ws.onmessage = handleWebSocketMessage
 
@@ -126,15 +118,15 @@ export default function HistoryPage() {
       <div className="flex flex-1 overflow-hidden">
         <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
 
-        <main className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full ${
-          sidebarCollapsed ? "pl-20 pr-6 pt-6 pb-6" : "pl-68 pr-6 pt-6 pb-6"
+        <main className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full px-4 sm:px-6 lg:px-8 ${
+          sidebarCollapsed ? "lg:ml-16 ml-0 pr-0 pt-6 pb-28 sm:pb-6 lg:max-w-[calc(100%-80px)]" : "lg:ml-64 ml-0 pr-0 pt-6 pb-28 sm:pb-6 lg:max-w-[calc(100%-272px)]"
         }`}>
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-col sm:flex-row items-center sm:items-center justify-between w-full gap-3">
+            <div className="w-full text-center sm:text-left">
               <h1 className="text-3xl font-bold">Trading History</h1>
               <p className="text-muted-foreground">View your complete trading history and performance</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-center sm:self-auto">
               {lastUpdate && (
                 <span className="text-xs text-muted-foreground">
                   Updated: {lastUpdate}
@@ -260,8 +252,43 @@ export default function HistoryPage() {
                   <p>No trading history found</p>
                 </div>
               ) : (
-                <div className="overflow-auto">
-                  <Table>
+                <>
+                  {/* Mobile: stacked cards */}
+                  <div className="flex flex-col gap-3 sm:hidden">
+                    {filteredPositions.map((position: Position) => {
+                      const openTime = position.openTime || position.openedAt
+                      const closeTime = position.closeTime || position.closedAt
+                      const duration = closeTime && openTime
+                        ? new Date(closeTime).getTime() - new Date(openTime).getTime()
+                        : 0
+                      const durationText = duration > 0 ? `${Math.floor(duration / (1000 * 60))}m` : '-'
+                      const pnl = position.profit ?? 0
+
+                      return (
+                        <Card key={position.id} className="p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-mono">#{position.id}</span>
+                                <Badge variant="secondary" className="text-xs">closed</Badge>
+                              </div>
+                              <div className="text-sm font-semibold mt-1">{position.symbol}</div>
+                              <div className="text-xs text-muted-foreground mt-1">{openTime ? new Date(openTime).toLocaleString() : '-'}</div>
+                              <div className="text-xs text-muted-foreground mt-1">Duration: {durationText} • Lots: {position.volume || position.lotSize}</div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className={`font-mono font-semibold ${getPnLColor(pnl)}`}>{formatPnL(pnl)}</div>
+                              <div className="text-xs text-muted-foreground">Close: {position.closePrice ? formatPrice(position.closePrice) : '-'}</div>
+                            </div>
+                          </div>
+                        </Card>
+                      )
+                    })}
+                  </div>
+
+                  {/* Desktop/tablet: regular table */}
+                  <div className="hidden sm:block overflow-auto">
+                    <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Trade</TableHead>
@@ -326,6 +353,7 @@ export default function HistoryPage() {
                     </TableBody>
                   </Table>
                 </div>
+                  </>
               )}
             </CardContent>
           </Card>

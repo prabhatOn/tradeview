@@ -932,19 +932,21 @@ export default function UsersPage() {
   return (
     <ProtectedRoute requireAdmin>
       <AdminLayout sidebarItems={adminSidebarItems} topBarConfig={adminTopBarConfig}>
-        <div className="space-y-8">
-          <div className="flex items-center justify-between">
+  <div className="space-y-8 pb-24">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-foreground">User Management</h1>
               <p className="text-muted-foreground mt-2">Manage user accounts, permissions, and lifecycle actions.</p>
             </div>
-            <Button
-              onClick={handleOpenAddUserDialog}
-              className="bg-green-600 hover:bg-green-700 text-white shadow-lg backdrop-blur-sm"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add New User
-            </Button>
+            <div className="mt-3 sm:mt-0">
+              <Button
+                onClick={handleOpenAddUserDialog}
+                className="bg-green-600 hover:bg-green-700 text-white shadow-lg backdrop-blur-sm w-full sm:w-auto text-sm sm:text-base px-3 py-2"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add New User
+              </Button>
+            </div>
           </div>
 
           {statsError && (
@@ -1034,186 +1036,264 @@ export default function UsersPage() {
                 </Alert>
               )}
 
-              <div className="overflow-x-auto rounded-lg border border-border/10">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Accounts</TableHead>
-                      <TableHead>Total Balance</TableHead>
-                      <TableHead>Last Login</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isLoadingUsers && users.length === 0 &&
-                      Array.from({ length: 5 }).map((_, index) => (
-                        <TableRow key={`skeleton-${index}`}>
-                          <TableCell>
-                            <div className="flex items-center space-x-3">
-                              <div className="h-10 w-10 animate-pulse rounded-full bg-muted/40" />
-                              <div className="space-y-2">
-                                <div className="h-4 w-24 animate-pulse rounded bg-muted/40" />
-                                <div className="h-3 w-32 animate-pulse rounded bg-muted/30" />
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="h-5 w-16 animate-pulse rounded bg-muted/40" />
-                          </TableCell>
-                          <TableCell>
-                            <div className="h-5 w-20 animate-pulse rounded bg-muted/40" />
-                          </TableCell>
-                          <TableCell>
-                            <div className="h-5 w-12 animate-pulse rounded bg-muted/40" />
-                          </TableCell>
-                          <TableCell>
-                            <div className="h-5 w-24 animate-pulse rounded bg-muted/40" />
-                          </TableCell>
-                          <TableCell>
-                            <div className="h-5 w-24 animate-pulse rounded bg-muted/40" />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="h-8 w-24 animate-pulse rounded bg-muted/40" />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-
-                    {!isLoadingUsers && showEmptyState && (
+              {/* Desktop table (visible on sm and up) */}
+              <div className="hidden sm:block">
+                <div className="overflow-x-auto rounded-lg border border-border/10">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                          No users match your filters yet.
-                        </TableCell>
+                        <TableHead>User</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Accounts</TableHead>
+                        <TableHead>Total Balance</TableHead>
+                        <TableHead>Last Login</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    )}
-
-                    {users.map((user) => {
-                      const fullName = buildFullName(user.firstName, user.lastName, user.email)
-                      const initials = getInitials(fullName)
-                      const statusVariant: "default" | "destructive" | "outline" =
-                        user.status === "active"
-                          ? "default"
-                          : user.status === "suspended"
-                            ? "destructive"
-                            : "outline"
-
-                      return (
-                        <TableRow
-                          key={user.id}
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => handleUserRowClick(user)}
-                        >
-                          <TableCell>
-                            <div className="flex items-center space-x-3">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border/20 bg-foreground/10 text-sm font-semibold text-foreground">
-                                {initials}
-                              </div>
-                              <div>
-                                <div className="flex items-center space-x-2 font-medium">
-                                  <span>{fullName}</span>
-                                  {user.isVerified && <Shield className="h-4 w-4 text-green-500" />}
+                    </TableHeader>
+                    <TableBody>
+                      {isLoadingUsers && users.length === 0 &&
+                        Array.from({ length: 5 }).map((_, index) => (
+                          <TableRow key={`skeleton-${index}`}>
+                            <TableCell>
+                              <div className="flex items-center space-x-3">
+                                <div className="h-10 w-10 animate-pulse rounded-full bg-muted/40" />
+                                <div className="space-y-2">
+                                  <div className="h-4 w-24 animate-pulse rounded bg-muted/40" />
+                                  <div className="h-3 w-32 animate-pulse rounded bg-muted/30" />
                                 </div>
-                                <div className="text-sm text-muted-foreground">{user.email}</div>
-                                <div className="text-xs text-muted-foreground">Joined {formatDate(user.createdAt)}</div>
                               </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={statusVariant} className="capitalize">
-                              {formatStatus(user.status)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {user.role ? (
-                              <Badge variant="outline" className="capitalize">
-                                {formatStatus(user.role)}
-                              </Badge>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell>{user.tradingAccountsCount}</TableCell>
-                          <TableCell className="font-mono font-semibold text-green-600">
-                            {formatCurrency(user.totalBalance)}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {formatLastLogin(user.lastLoginAt)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end space-x-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  handleVerificationToggle(user)
-                                }}
-                                disabled={verifyingUserId === user.id}
-                                title={user.isVerified ? "Revoke verification" : "Verify user"}
-                              >
-                                {verifyingUserId === user.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : user.isVerified ? (
-                                  <ShieldOff className="h-4 w-4" />
-                                ) : (
-                                  <ShieldCheck className="h-4 w-4" />
-                                )}
-                                <span className="sr-only">
-                                  {user.isVerified ? "Revoke verification" : "Verify user"}
-                                </span>
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-8"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  handleStatusToggle(user)
-                                }}
-                                disabled={updatingUserId === user.id}
-                              >
-                                {updatingUserId === user.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : user.status === "active" ? (
-                                  <UserX className="h-4 w-4" />
-                                ) : (
-                                  <UserCheck className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="h-5 w-16 animate-pulse rounded bg-muted/40" />
+                            </TableCell>
+                            <TableCell>
+                              <div className="h-5 w-20 animate-pulse rounded bg-muted/40" />
+                            </TableCell>
+                            <TableCell>
+                              <div className="h-5 w-12 animate-pulse rounded bg-muted/40" />
+                            </TableCell>
+                            <TableCell>
+                              <div className="h-5 w-24 animate-pulse rounded bg-muted/40" />
+                            </TableCell>
+                            <TableCell>
+                              <div className="h-5 w-24 animate-pulse rounded bg-muted/40" />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="h-8 w-24 animate-pulse rounded bg-muted/40" />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+
+                      {!isLoadingUsers && showEmptyState && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                            No users match your filters yet.
                           </TableCell>
                         </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+                      )}
+
+                      {users.map((user) => {
+                        const fullName = buildFullName(user.firstName, user.lastName, user.email)
+                        const initials = getInitials(fullName)
+                        const statusVariant: "default" | "destructive" | "outline" =
+                          user.status === "active"
+                            ? "default"
+                            : user.status === "suspended"
+                              ? "destructive"
+                              : "outline"
+
+                        return (
+                          <TableRow
+                            key={user.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => handleUserRowClick(user)}
+                          >
+                            <TableCell>
+                              <div className="flex items-center space-x-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border/20 bg-foreground/10 text-sm font-semibold text-foreground">
+                                  {initials}
+                                </div>
+                                <div>
+                                  <div className="flex items-center space-x-2 font-medium">
+                                    <span>{fullName}</span>
+                                    {user.isVerified && <Shield className="h-4 w-4 text-green-500" />}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">{user.email}</div>
+                                  <div className="text-xs text-muted-foreground">Joined {formatDate(user.createdAt)}</div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={statusVariant} className="capitalize">
+                                {formatStatus(user.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {user.role ? (
+                                <Badge variant="outline" className="capitalize">
+                                  {formatStatus(user.role)}
+                                </Badge>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell>{user.tradingAccountsCount}</TableCell>
+                            <TableCell className="font-mono font-semibold text-green-600">
+                              {formatCurrency(user.totalBalance)}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatLastLogin(user.lastLoginAt)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end space-x-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleVerificationToggle(user)
+                                  }}
+                                  disabled={verifyingUserId === user.id}
+                                  title={user.isVerified ? "Revoke verification" : "Verify user"}
+                                >
+                                  {verifyingUserId === user.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : user.isVerified ? (
+                                    <ShieldOff className="h-4 w-4" />
+                                  ) : (
+                                    <ShieldCheck className="h-4 w-4" />
+                                  )}
+                                  <span className="sr-only">
+                                    {user.isVerified ? "Revoke verification" : "Verify user"}
+                                  </span>
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleStatusToggle(user)
+                                  }}
+                                  disabled={updatingUserId === user.id}
+                                >
+                                  {updatingUserId === user.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : user.status === "active" ? (
+                                    <UserX className="h-4 w-4" />
+                                  ) : (
+                                    <UserCheck className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-4 border-t border-border/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">
+              {/* Mobile list (visible on xs only) */}
+              <div className="space-y-3 sm:hidden">
+                {isLoadingUsers && users.length === 0 ? (
+                  Array.from({ length: 5 }).map((_, idx) => (
+                    <div key={`mob-skel-${idx}`} className="animate-pulse bg-card/20 rounded-lg p-3">
+                      <div className="flex items-center space-x-3">
+                        <div className="h-10 w-10 rounded-full bg-muted/40" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-40 rounded bg-muted/40" />
+                          <div className="h-3 w-28 rounded bg-muted/30" />
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : showEmptyState ? (
+                  <div className="py-10 text-center text-muted-foreground">No users match your filters yet.</div>
+                ) : (
+                  users.map((user) => {
+                    const fullName = buildFullName(user.firstName, user.lastName, user.email)
+                    const initials = getInitials(fullName)
+                    const statusVariant: "default" | "destructive" | "outline" =
+                      user.status === "active"
+                        ? "default"
+                        : user.status === "suspended"
+                          ? "destructive"
+                          : "outline"
+
+                    return (
+                      <div key={`mob-user-${user.id}`} onClick={() => handleUserRowClick(user)} className="bg-card/40 border border-border/10 rounded-lg p-3 overflow-hidden">
+                        <div className="flex items-start space-x-3 w-full">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border/20 bg-foreground/10 text-sm font-semibold text-foreground flex-shrink-0">{initials}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2 font-medium">
+                              <span className="truncate">{fullName}</span>
+                              {user.isVerified && <Shield className="h-4 w-4 text-green-500 flex-shrink-0" />}
+                            </div>
+                            <div className="text-sm text-muted-foreground truncate">{user.email}</div>
+                            <div className="text-xs text-muted-foreground">Joined {formatDate(user.createdAt)}</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center space-x-3">
+                            <Badge variant={statusVariant} className="capitalize">{formatStatus(user.status)}</Badge>
+                            <div className="text-sm font-mono font-semibold text-green-600">{formatCurrency(user.totalBalance)}</div>
+                          </div>
+
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              onClick={(event) => { event.stopPropagation(); handleVerificationToggle(user) }}
+                              disabled={verifyingUserId === user.id}
+                              title={user.isVerified ? "Revoke verification" : "Verify user"}
+                            >
+                              {verifyingUserId === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : user.isVerified ? <ShieldOff className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={(event) => { event.stopPropagation(); handleStatusToggle(user) }}
+                              disabled={updatingUserId === user.id}
+                            >
+                              {updatingUserId === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : user.status === "active" ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              <div className="border-t border-border/10 pt-4">
+                <p className="text-sm text-muted-foreground text-center sm:text-left">
                   Showing {from.toLocaleString()} – {to.toLocaleString()} of {totalUsers.toLocaleString()} users
                 </p>
-                <div className="flex items-center justify-end space-x-2">
+                <div className="mt-3 flex items-center justify-center sm:justify-end space-x-3">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
                     disabled={page === 1 || isLoadingUsers}
+                    className="w-20 sm:w-28"
                   >
                     <ArrowLeft className="mr-2 h-4 w-4" />
-                    Previous
+                    Prev
                   </Button>
-                  <span className="text-sm text-muted-foreground">
-                    Page {page} of {totalPages}
-                  </span>
+
+                  <div className="text-sm text-muted-foreground text-center">Page {page} of {totalPages}</div>
+
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setPage((prev) => (prev < totalPages ? prev + 1 : prev))}
                     disabled={page >= totalPages || isLoadingUsers}
+                    className="w-20 sm:w-28"
                   >
                     Next
                     <ArrowRight className="ml-2 h-4 w-4" />

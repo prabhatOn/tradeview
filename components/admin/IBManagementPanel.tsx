@@ -57,8 +57,6 @@ export function IBManagementPanel() {
   const [settingsForm, setSettingsForm] = useState({
     default_commission_rate: "",
     default_ib_share_percent: "",
-    min_ib_share_percent: "",
-    max_ib_share_percent: ""
   })
 
   const loadData = useCallback(async () => {
@@ -76,17 +74,17 @@ export function IBManagementPanel() {
         setGlobalSettings(settingsResp.data)
         setSettingsForm({
           default_commission_rate: String(settingsResp.data.default_commission_rate || 0.0070),
-          default_ib_share_percent: String(settingsResp.data.default_ib_share_percent || 50),
-          min_ib_share_percent: String(settingsResp.data.min_ib_share_percent || 10),
-          max_ib_share_percent: String(settingsResp.data.max_ib_share_percent || 90)
+          default_ib_share_percent: String(settingsResp.data.default_ib_share_percent || 50)
         })
       }
-    } catch (error: any) {
-      toast({
-        title: "Failed to load data",
-        description: error?.message || "An error occurred",
-        variant: "destructive"
-      })
+    } catch (error) {
+      let message = 'An error occurred'
+      if (typeof error === 'string') message = error
+      else if (typeof error === 'object' && error !== null) {
+        const maybe = (error as Record<string, unknown>).message
+        if (typeof maybe === 'string') message = maybe
+      }
+      toast({ title: "Failed to load data", description: message, variant: "destructive" })
     } finally {
       setLoading(false)
     }
@@ -124,12 +122,14 @@ export function IBManagementPanel() {
         cancelEdit()
         await loadData()
       }
-    } catch (error: any) {
-      toast({
-        title: "Failed to update",
-        description: error?.message || "An error occurred",
-        variant: "destructive"
-      })
+    } catch (error) {
+      let message = 'An error occurred'
+      if (typeof error === 'string') message = error
+      else if (typeof error === 'object' && error !== null) {
+        const maybe = (error as Record<string, unknown>).message
+        if (typeof maybe === 'string') message = maybe
+      }
+      toast({ title: "Failed to update", description: message, variant: "destructive" })
     }
   }
 
@@ -140,17 +140,22 @@ export function IBManagementPanel() {
         toast({ title: "Success", description: "Commission marked as paid" })
         await loadData()
       }
-    } catch (error: any) {
-      toast({
-        title: "Failed to mark as paid",
-        description: error?.message || "An error occurred",
-        variant: "destructive"
-      })
+    } catch (error) {
+      let message = 'An error occurred'
+      if (typeof error === 'string') message = error
+      else if (typeof error === 'object' && error !== null) {
+        const maybe = (error as Record<string, unknown>).message
+        if (typeof maybe === 'string') message = maybe
+      }
+      toast({ title: "Failed to mark as paid", description: message, variant: "destructive" })
     }
   }
 
-  const updateGlobalSetting = async (key: keyof GlobalSettings) => {
-    const value = parseFloat(settingsForm[key])
+  type AllowedSettingKey = 'default_commission_rate' | 'default_ib_share_percent'
+
+  const updateGlobalSetting = async (key: AllowedSettingKey) => {
+    const raw = (settingsForm as Record<string, string>)[key]
+    const value = parseFloat(String(raw))
     if (!Number.isFinite(value) || value < 0) {
       toast({
         title: "Invalid value",
@@ -167,10 +172,17 @@ export function IBManagementPanel() {
         setEditingSettings(false)
         await loadData()
       }
-    } catch (error: any) {
+    } catch (error) {
+      let message = 'An error occurred'
+      if (typeof error === 'string') {
+        message = error
+      } else if (typeof error === 'object' && error !== null) {
+        const maybe = (error as Record<string, unknown>).message
+        if (typeof maybe === 'string') message = maybe
+      }
       toast({
         title: "Failed to update setting",
-        description: error?.message || "An error occurred",
+        description: message,
         variant: "destructive"
       })
     }
@@ -234,16 +246,21 @@ export function IBManagementPanel() {
 
       {/* Tabs */}
       <Tabs defaultValue="ibs" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="ibs">IBs List</TabsTrigger>
-          <TabsTrigger value="pending">
-            Pending Payments
-            {pendingCommissions.length > 0 && (
-              <Badge variant="destructive" className="ml-2">{pendingCommissions.length}</Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="settings">Global Settings</TabsTrigger>
-        </TabsList>
+        {/* make tabs scrollable on small screens */}
+        <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="overflow-x-auto">
+            <TabsList className="w-max gap-2">
+              <TabsTrigger value="ibs" className="whitespace-nowrap px-3 py-1.5">IBs List</TabsTrigger>
+              <TabsTrigger value="pending" className="whitespace-nowrap px-3 py-1.5">
+                Pending Payments
+                {pendingCommissions.length > 0 && (
+                  <Badge variant="destructive" className="ml-2">{pendingCommissions.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="whitespace-nowrap px-3 py-1.5">Global Settings</TabsTrigger>
+            </TabsList>
+          </div>
+        </div>
 
         {/* IBs List Tab */}
         <TabsContent value="ibs">
@@ -253,62 +270,111 @@ export function IBManagementPanel() {
               <CardDescription>Manage IB commission settings and view performance</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>IB Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Clients</TableHead>
-                    <TableHead>Trades</TableHead>
-                    <TableHead>Total Commission</TableHead>
-                    <TableHead>IB Share %</TableHead>
-                    <TableHead>IB Amount</TableHead>
-                    <TableHead>Admin Amount</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {ibs.map((ib) => (
-                    <TableRow key={ib.id}>
-                      <TableCell className="font-medium">{ib.ibName}</TableCell>
-                      <TableCell>{ib.ibEmail}</TableCell>
-                      <TableCell>{ib.totalClients}</TableCell>
-                      <TableCell>{ib.totalTrades}</TableCell>
-                      <TableCell>${ib.totalCommission.toFixed(2)}</TableCell>
-                      <TableCell>
+              {/* Mobile cards view */}
+              <div className="sm:hidden space-y-3">
+                {ibs.length === 0 ? (
+                  <div className="rounded-lg border border-border/20 bg-background/40 p-3 text-sm text-muted-foreground">No IBs found.</div>
+                ) : (
+                  ibs.map((ib) => (
+                    <div key={`ib-mobile-${ib.id}`} className="rounded-lg border border-border/30 bg-card/80 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-foreground truncate">{ib.ibName}</div>
+                          <div className="text-xs text-muted-foreground truncate mt-1">{ib.ibEmail}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Clients: {ib.totalClients} · Trades: {ib.totalTrades}</div>
+                        </div>
+                        <div className="flex-shrink-0 text-right">
+                          <div className="font-semibold text-foreground">${ib.totalCommission.toFixed(2)}</div>
+                          <div className="text-xs mt-1"><Badge variant={ib.status === 'active' ? 'default' : 'secondary'}>{ib.status}</Badge></div>
+                        </div>
+                      </div>
+                      <div className="mt-3">
                         {editingId === ib.id ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-col gap-2">
                             <Input
                               type="number"
                               value={editShareValue}
                               onChange={(e) => setEditShareValue(e.target.value)}
-                              className="w-20"
+                              className="w-full"
                               min="10"
                               max="90"
                             />
-                            <Button size="sm" onClick={() => saveShare(ib.id)}>Save</Button>
-                            <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
+                            <div className="flex gap-2">
+                              <Button size="sm" className="w-full" onClick={() => saveShare(ib.id)}>Save</Button>
+                              <Button size="sm" variant="ghost" className="w-full" onClick={cancelEdit}>Cancel</Button>
+                            </div>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
-                            <span>{ib.ibSharePercent}%</span>
-                            <Button size="sm" variant="outline" onClick={() => startEdit(ib.id, ib.ibSharePercent)}>
-                              Edit
-                            </Button>
+                            <div className="flex-1">Share: {ib.ibSharePercent}%</div>
+                            <Button size="sm" variant="outline" className="w-24" onClick={() => startEdit(ib.id, ib.ibSharePercent)}>Edit</Button>
                           </div>
                         )}
-                      </TableCell>
-                      <TableCell className="text-green-600">${ib.totalIBAmount.toFixed(2)}</TableCell>
-                      <TableCell className="text-blue-600">${ib.totalAdminAmount.toFixed(2)}</TableCell>
-                      <TableCell>
-                        <Badge variant={ib.status === 'active' ? 'default' : 'secondary'}>
-                          {ib.status}
-                        </Badge>
-                      </TableCell>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop table view */}
+              <div className="hidden sm:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>IB Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Clients</TableHead>
+                      <TableHead>Trades</TableHead>
+                      <TableHead>Total Commission</TableHead>
+                      <TableHead>IB Share %</TableHead>
+                      <TableHead>IB Amount</TableHead>
+                      <TableHead>Admin Amount</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {ibs.map((ib) => (
+                      <TableRow key={ib.id}>
+                        <TableCell className="font-medium">{ib.ibName}</TableCell>
+                        <TableCell>{ib.ibEmail}</TableCell>
+                        <TableCell>{ib.totalClients}</TableCell>
+                        <TableCell>{ib.totalTrades}</TableCell>
+                        <TableCell>${ib.totalCommission.toFixed(2)}</TableCell>
+                        <TableCell>
+                          {editingId === ib.id ? (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                value={editShareValue}
+                                onChange={(e) => setEditShareValue(e.target.value)}
+                                className="w-20"
+                                min="10"
+                                max="90"
+                              />
+                              <Button size="sm" onClick={() => saveShare(ib.id)}>Save</Button>
+                              <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span>{ib.ibSharePercent}%</span>
+                              <Button size="sm" variant="outline" onClick={() => startEdit(ib.id, ib.ibSharePercent)}>
+                                Edit
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-green-600">${ib.totalIBAmount.toFixed(2)}</TableCell>
+                        <TableCell className="text-blue-600">${ib.totalAdminAmount.toFixed(2)}</TableCell>
+                        <TableCell>
+                          <Badge variant={ib.status === 'active' ? 'default' : 'secondary'}>
+                            {ib.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -321,47 +387,69 @@ export function IBManagementPanel() {
               <CardDescription>Review and mark commissions as paid</CardDescription>
             </CardHeader>
             <CardContent>
-              {pendingCommissions.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No pending commissions
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>IB Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Trade Volume</TableHead>
-                      <TableHead>Total Commission</TableHead>
-                      <TableHead>IB Amount</TableHead>
-                      <TableHead>Admin Amount</TableHead>
-                      <TableHead>Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pendingCommissions.map((comm) => (
-                      <TableRow key={comm.id}>
-                        <TableCell className="font-medium">{comm.ibName}</TableCell>
-                        <TableCell>{comm.ibEmail}</TableCell>
-                        <TableCell>{new Date(comm.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell>${comm.tradeVolume.toFixed(2)}</TableCell>
-                        <TableCell>${comm.totalCommission.toFixed(2)}</TableCell>
-                        <TableCell className="text-green-600">${comm.ibAmount.toFixed(2)}</TableCell>
-                        <TableCell className="text-blue-600">${comm.adminAmount.toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            onClick={() => markAsPaid(comm.id)}
-                          >
-                            Mark Paid
-                          </Button>
-                        </TableCell>
+              {/* Mobile list */}
+              <div className="sm:hidden space-y-3">
+                {pendingCommissions.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No pending commissions</div>
+                ) : (
+                  pendingCommissions.map((comm) => (
+                    <div key={`comm-mobile-${comm.id}`} className="rounded-lg border border-border/30 bg-card/80 p-3">
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-foreground truncate">{comm.ibName}</div>
+                          <div className="text-xs text-muted-foreground truncate">{comm.ibEmail}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{new Date(comm.createdAt).toLocaleDateString()}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold">${comm.totalCommission.toFixed(2)}</div>
+                          <div className="text-xs text-muted-foreground">Volume: ${comm.tradeVolume.toFixed(2)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <Button size="sm" className="w-full" onClick={() => markAsPaid(comm.id)}>Mark Paid</Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block">
+                {pendingCommissions.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No pending commissions</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>IB Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Trade Volume</TableHead>
+                        <TableHead>Total Commission</TableHead>
+                        <TableHead>IB Amount</TableHead>
+                        <TableHead>Admin Amount</TableHead>
+                        <TableHead>Action</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+                    </TableHeader>
+                    <TableBody>
+                      {pendingCommissions.map((comm) => (
+                        <TableRow key={comm.id}>
+                          <TableCell className="font-medium">{comm.ibName}</TableCell>
+                          <TableCell>{comm.ibEmail}</TableCell>
+                          <TableCell>{new Date(comm.createdAt).toLocaleDateString()}</TableCell>
+                          <TableCell>${comm.tradeVolume.toFixed(2)}</TableCell>
+                          <TableCell>${comm.totalCommission.toFixed(2)}</TableCell>
+                          <TableCell className="text-green-600">${comm.ibAmount.toFixed(2)}</TableCell>
+                          <TableCell className="text-blue-600">${comm.adminAmount.toFixed(2)}</TableCell>
+                          <TableCell>
+                            <Button size="sm" onClick={() => markAsPaid(comm.id)}>Mark Paid</Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -374,91 +462,60 @@ export function IBManagementPanel() {
               <CardDescription>Configure default commission rates and IB share percentages</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Default Commission Rate (%)</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      value={settingsForm.default_commission_rate}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, default_commission_rate: e.target.value })}
-                      disabled={!editingSettings}
-                      step="0.0001"
-                    />
-                    {editingSettings && (
-                      <Button onClick={() => updateGlobalSetting('default_commission_rate')}>Save</Button>
-                    )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Default Commission Rate (%)</Label>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                      <Input
+                        type="number"
+                        value={settingsForm.default_commission_rate}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, default_commission_rate: e.target.value })}
+                        disabled={!editingSettings}
+                        step="0.0001"
+                        className="w-full sm:w-auto"
+                      />
+                      {editingSettings && (
+                        <Button onClick={() => updateGlobalSetting('default_commission_rate')} className="w-full sm:w-auto">Save</Button>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Current: {globalSettings?.default_commission_rate}% (0.0070 = 0.70%)
+                    </p>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Current: {globalSettings?.default_commission_rate}% (0.0070 = 0.70%)
-                  </p>
+
+                  <div className="space-y-2">
+                    <Label>Default IB Share (%)</Label>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                      <Input
+                        type="number"
+                        value={settingsForm.default_ib_share_percent}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, default_ib_share_percent: e.target.value })}
+                        disabled={!editingSettings}
+                        className="w-full sm:w-auto"
+                      />
+                      {editingSettings && (
+                        <Button onClick={() => updateGlobalSetting('default_ib_share_percent')} className="w-full sm:w-auto">Save</Button>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Current: {globalSettings?.default_ib_share_percent}%
+                    </p>
+                  </div>
+
+                  {/* Minimum and Maximum IB Share inputs removed per request */}
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Default IB Share (%)</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      value={settingsForm.default_ib_share_percent}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, default_ib_share_percent: e.target.value })}
-                      disabled={!editingSettings}
-                    />
-                    {editingSettings && (
-                      <Button onClick={() => updateGlobalSetting('default_ib_share_percent')}>Save</Button>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Current: {globalSettings?.default_ib_share_percent}%
-                  </p>
+                <div className="flex justify-end">
+                  <Button
+                    variant={editingSettings ? "outline" : "default"}
+                    onClick={() => setEditingSettings(!editingSettings)}
+                    className="w-full sm:w-auto"
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    {editingSettings ? "Cancel Edit" : "Edit Settings"}
+                  </Button>
                 </div>
-
-                <div className="space-y-2">
-                  <Label>Minimum IB Share (%)</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      value={settingsForm.min_ib_share_percent}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, min_ib_share_percent: e.target.value })}
-                      disabled={!editingSettings}
-                    />
-                    {editingSettings && (
-                      <Button onClick={() => updateGlobalSetting('min_ib_share_percent')}>Save</Button>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Current: {globalSettings?.min_ib_share_percent}%
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Maximum IB Share (%)</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      value={settingsForm.max_ib_share_percent}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, max_ib_share_percent: e.target.value })}
-                      disabled={!editingSettings}
-                    />
-                    {editingSettings && (
-                      <Button onClick={() => updateGlobalSetting('max_ib_share_percent')}>Save</Button>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Current: {globalSettings?.max_ib_share_percent}%
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button
-                  variant={editingSettings ? "outline" : "default"}
-                  onClick={() => setEditingSettings(!editingSettings)}
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  {editingSettings ? "Cancel Edit" : "Edit Settings"}
-                </Button>
-              </div>
-            </CardContent>
+              </CardContent>
           </Card>
         </TabsContent>
       </Tabs>

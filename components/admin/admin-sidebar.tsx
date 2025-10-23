@@ -4,17 +4,24 @@ import React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
+// Separator intentionally removed; not used in this component
 import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  MoreVertical,
 } from "lucide-react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 interface SidebarItem {
   title: string
-  icon: any
+  icon?: React.ElementType
   href: string
   description?: string
 }
@@ -33,10 +40,16 @@ export function AdminSidebar({ className, collapsed = false, onCollapsedChange, 
     onCollapsedChange?.(!collapsed)
   }
 
+  // Mobile primary items: Overview, User Management, Trades (indexes chosen to match admin config)
+  const mobilePrimary = [items[0], items[1], items[3]]
+  const mobileMore = items.filter((it) => !mobilePrimary.includes(it))
+
   return (
+    <>
+    {/* Desktop/Large Sidebar (hidden on small screens) */}
     <div
       className={cn(
-        "fixed left-0 top-0 h-screen flex flex-col bg-card border-r border-border transition-all duration-300 shadow-lg z-40",
+        "hidden lg:flex fixed left-0 top-0 h-screen flex-col bg-card border-r border-border transition-all duration-300 shadow-lg z-40",
         collapsed ? "w-16" : "w-64",
         className
       )}
@@ -131,5 +144,44 @@ export function AdminSidebar({ className, collapsed = false, onCollapsedChange, 
         )}
       </div>
     </div>
+
+    {/* Mobile Bottom Navigation - visible only on small screens */}
+    <div className="fixed bottom-0 w-full z-[9999] bg-card/95 border-t lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <nav className="flex items-center justify-between h-16 px-2 w-full mx-2 rounded-t-lg">
+        {mobilePrimary.map((item) => {
+          const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
+          const Icon = item.icon
+          return (
+            <Link key={item.href} href={item.href} className={cn(
+              "flex-1 flex flex-col items-center justify-center py-1 text-xs",
+              isActive ? "text-primary" : "text-muted-foreground"
+            )}>
+              {Icon && <Icon className="h-5 w-5" />}
+              <span className="mt-1 text-center text-[10px]">{item.title}</span>
+            </Link>
+          )
+        })}
+
+        {/* More menu in center */}
+        <div className="flex-1 flex items-center justify-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex flex-col items-center justify-center py-1 text-xs">
+                <MoreVertical className="h-5 w-5" />
+                <span className="mt-1 text-[10px]">More</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="center" className="w-48">
+              {mobileMore.map((it) => (
+                <DropdownMenuItem asChild key={it.href}>
+                  <Link href={it.href}>{it.title}</Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </nav>
+    </div>
+    </>
   )
 }

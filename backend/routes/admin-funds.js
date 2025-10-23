@@ -178,33 +178,57 @@ router.get('/transactions', asyncHandler(async (req, res) => {
   };
 
   const sortColumn = sortColumnMap[sortBy] || `${table}.created_at`;
-  const rows = await executeQuery(`
-    SELECT 
-      ${table}.id,
-      ${table}.transaction_id,
-      ${table}.amount,
-      ${table}.fee,
-      ${table}.net_amount,
-      ${table}.status,
-      ${table}.payment_reference,
-      ${table}.user_notes,
-      ${table}.admin_notes,
-  ${reviewNotesSelect},
-      ${table}.created_at,
-      ${table}.processed_at,
-      ${table}.reviewed_at,
-      ${table}.processed_by,
-      ${table}.reviewed_by,
-      ${table}.batch_reference,
-      pm.name AS payment_method_name,
-      pm.type AS payment_method_type,
-      u.email,
-      CONCAT(u.first_name, ' ', u.last_name) AS user_name,
-      ta.account_number
+  
+  // Build the query with conditional joins for bank details (only for withdrawals)
+  let selectFields = `
+    ${table}.id,
+    ${table}.transaction_id,
+    ${table}.amount,
+    ${table}.fee,
+    ${table}.net_amount,
+    ${table}.status,
+    ${table}.payment_reference,
+    ${table}.user_notes,
+    ${table}.admin_notes,
+${reviewNotesSelect},
+    ${table}.created_at,
+    ${table}.processed_at,
+    ${table}.reviewed_at,
+    ${table}.processed_by,
+    ${table}.reviewed_by,
+    ${table}.batch_reference,
+    pm.name AS payment_method_name,
+    pm.type AS payment_method_type,
+    u.email,
+    CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+    ta.account_number`;
+  
+  let joinClause = `
     FROM ${table}
     INNER JOIN users u ON u.id = ${table}.user_id
     INNER JOIN trading_accounts ta ON ta.id = ${table}.account_id
-    INNER JOIN payment_methods pm ON pm.id = ${table}.payment_method_id
+    INNER JOIN payment_methods pm ON pm.id = ${table}.payment_method_id`;
+  
+  // Add bank details for withdrawals
+  if (type === 'withdrawals') {
+    selectFields += `,
+    ba.bank_name,
+    ba.account_name AS bank_account_name,
+    ba.account_number AS bank_account_number,
+    ba.account_type,
+    ba.iban,
+    ba.swift_code,
+    ba.routing_number,
+    ba.branch_name`;
+    
+    joinClause += `
+    LEFT JOIN payment_gateways pg ON pg.id = ${table}.payment_gateway_id
+    LEFT JOIN bank_accounts ba ON ba.payment_gateway_id = pg.id`;
+  }
+  
+  const rows = await executeQuery(`
+    SELECT ${selectFields}
+    ${joinClause}
     ${whereClause}
     ORDER BY ${sortColumn} ${sortOrder.toUpperCase()}
     LIMIT ? OFFSET ?

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-var-requires */
-const { executeQuery, executeTransaction } = require('../config/database');
+const { executeQuery } = require('../config/database');
 
 class TradingAccount {
   constructor(data) {
@@ -64,29 +64,25 @@ class TradingAccount {
   async updateBalance(newBalance, changeType, changeAmount, referenceId = null, referenceType = null, notes = null) {
     const previousBalance = this.balance;
     
-    // Start transaction to update balance and record history
-    const queries = [
-      {
-        sql: `UPDATE trading_accounts 
-              SET balance = ?, equity = ?, free_margin = ?, updated_at = CURRENT_TIMESTAMP 
-              WHERE id = ?`,
-        params: [newBalance, newBalance, newBalance, this.id] // Simplified: assuming no open positions for now
-      },
-      {
-        sql: `INSERT INTO account_balance_history 
-              (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [this.id, previousBalance, newBalance, changeAmount, changeType, referenceId, referenceType, notes]
-      }
-    ];
+    // Update balance in database
+    await executeQuery(
+      'UPDATE trading_accounts SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [newBalance, this.id]
+    );
 
-    await executeTransaction(queries);
+    // Insert balance history record
+    await executeQuery(
+      `INSERT INTO account_balance_history 
+       (account_id, previous_balance, new_balance, change_amount, change_type, reference_id, reference_type, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [this.id, previousBalance, newBalance, changeAmount, changeType, referenceId, referenceType, notes]
+    );
     
-    // Update local values
+    // Update local balance value
     this.balance = newBalance;
-    this.equity = newBalance;
-    this.freeMargin = newBalance;
-    this.updatedAt = new Date();
+    
+    // Refresh account metrics to properly calculate equity, used_margin, free_margin, and margin_level
+    await this.refreshAccountMetrics();
   }
 
   // Get account's open positions count
@@ -163,10 +159,25 @@ class TradingAccount {
   async getUsedMargin() {
     const marginQuery = await executeQuery(`
       SELECT 
-        COALESCE(SUM((p.lot_size * s.contract_size * p.open_price) / ta.leverage), 0) as used_margin
+        COALESCE(SUM(
+          CASE 
+            WHEN mp.bid IS NOT NULL AND mp.ask IS NOT NULL THEN
+              -- Use current market price for margin calculation
+              CASE 
+                WHEN p.side = 'buy' THEN (p.lot_size * s.contract_size * mp.ask) / ta.leverage
+                WHEN p.side = 'sell' THEN (p.lot_size * s.contract_size * mp.bid) / ta.leverage
+                ELSE 0
+              END
+            ELSE
+              -- Fallback to open price if no market data available
+              (p.lot_size * s.contract_size * p.open_price) / ta.leverage
+          END
+        ), 0) as used_margin
       FROM positions p
       JOIN symbols s ON p.symbol_id = s.id
       JOIN trading_accounts ta ON p.account_id = ta.id
+      LEFT JOIN market_prices mp ON p.symbol_id = mp.symbol_id 
+        AND mp.timestamp = (SELECT MAX(timestamp) FROM market_prices WHERE symbol_id = p.symbol_id)
       WHERE p.account_id = ? AND p.status = 'open'
     `, [this.id]);
 

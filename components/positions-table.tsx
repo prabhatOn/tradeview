@@ -53,7 +53,7 @@ import {
 } from "@/components/ui/tooltip"
 
 function PositionsTable() {
-  const { activeAccount, isLoading: _tradingLoading } = useTrading()
+  const { activeAccount } = useTrading()
   const { data: positionsData, isLoading, error, refetch } = usePositions(activeAccount?.id)
   const closePosition = useClosePosition()
   const [closingPositions, setClosingPositions] = useState<Set<number>>(new Set())
@@ -181,7 +181,7 @@ function PositionsTable() {
   }, [refetch])
 
   // Normalize positions data from backend
-  const rawPositions = Array.isArray(positionsData) ? positionsData : ((positionsData as unknown as any)?.data || [])
+  const rawPositions: unknown[] = Array.isArray(positionsData) ? positionsData : ((positionsData as unknown as { data?: unknown[] })?.data || [])
   const positions = normalizePositions(rawPositions)
   const openPositions = positions.filter((p: Position) => p.status === 'open')
   const pendingPositions = positions.filter((p: Position) => p.status === 'pending')
@@ -220,10 +220,11 @@ function PositionsTable() {
     const currentPrice = position.currentPrice ?? position.openPrice
     
     // Phase 5: Calculate margin usage
-    const marginUsed = (position as any).marginRequired ?? 0
-    const marginPercent = (activeAccount as any)?.marginUsed 
-      ? ((marginUsed / (activeAccount as any).marginUsed) * 100).toFixed(1)
-      : '0'
+  const posMaybe = position as unknown as { marginRequired?: number }
+  const marginUsed = posMaybe && typeof posMaybe.marginRequired === 'number' ? posMaybe.marginRequired : 0
+  const acctMaybe = activeAccount as unknown as { marginUsed?: number }
+  const accountMarginUsed = acctMaybe && typeof acctMaybe.marginUsed === 'number' ? acctMaybe.marginUsed : 0
+    const marginPercent = accountMarginUsed > 0 ? ((marginUsed / accountMarginUsed) * 100).toFixed(1) : '0'
     
     return (
       <TableRow key={position.id} className="group hover:bg-muted/50">
@@ -588,32 +589,71 @@ function PositionsTable() {
                 <p>No open positions</p>
               </div>
             ) : (
-              <div className="overflow-auto max-h-[500px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Position</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Symbol</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Lots</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Current</TableHead>
-                      <TableHead>Close Price</TableHead>
-                      <TableHead>S/L</TableHead>
-                      <TableHead>T/P</TableHead>
-                      <TableHead>Swap</TableHead>
-                      <TableHead>Profit</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {openPositions.map((position: Position) => (
-                      <PositionRow key={position.id} position={position} />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <>
+                {/* Mobile card list: visible on small screens */}
+                <div className="sm:hidden p-2 space-y-3 max-h-[60vh] overflow-auto">
+                  {openPositions.map((position: Position) => (
+                    <Card key={position.id} className="p-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-semibold">{position.symbol}</div>
+                            <Badge variant={position.status === 'open' ? 'default' : 'secondary'}>
+                              {position.status}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">#{position.id} • {position.side?.toUpperCase() || 'UNKNOWN'} • {position.volume ?? position.lotSize} lots</div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className={`font-mono font-semibold ${getPnLColor(position.unrealizedPnl ?? position.profit ?? 0)}`}>
+                            {formatPnL(position.unrealizedPnl ?? position.profit ?? 0)}
+                          </div>
+                          <div className="flex items-center justify-end gap-2 mt-3">
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setPartialCloseModal(position)}>
+                              <Scissors className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setDetailsModalPosition(position)}>
+                              <Info className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleClosePosition(position.id)} disabled={closingPositions.has(position.id)}>
+                              {closingPositions.has(position.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Desktop/tablet table: hidden on small screens */}
+                <div className="hidden sm:block overflow-auto max-h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Position</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Symbol</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Lots</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>Current</TableHead>
+                        <TableHead>Close Price</TableHead>
+                        <TableHead>S/L</TableHead>
+                        <TableHead>T/P</TableHead>
+                        <TableHead>Swap</TableHead>
+                        <TableHead>Profit</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {openPositions.map((position: Position) => (
+                        <PositionRow key={position.id} position={position} />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </TabsContent>
 
@@ -628,58 +668,83 @@ function PositionsTable() {
                 <p>No pending positions</p>
               </div>
             ) : (
-              <div className="overflow-auto max-h-[500px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Position</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Symbol</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Lots</TableHead>
-                      <TableHead>Trigger Price</TableHead>
-                      <TableHead>Profit</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pendingPositions.map((position: Position) => (
-                      <TableRow key={position.id} className="hover:bg-muted/50">
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <span>{position.id}</span>
-                            <Badge variant="secondary">pending</Badge>
+              <>
+                <div className="sm:hidden p-2 space-y-3 max-h-[40vh] overflow-auto">
+                  {pendingPositions.map((position: Position) => (
+                    <Card key={position.id} className="p-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="font-semibold">{position.symbol}</div>
+                          <div className="text-xs text-muted-foreground mt-1">#{position.id} • {position.side?.toUpperCase() || 'UNKNOWN'}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-mono font-semibold ${getPnLColor(position.profit || 0)}`}>
+                            {formatPnL(position.profit || 0)}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs">{position.openTime ? new Date(position.openTime).toLocaleTimeString() : '-'}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-semibold">{position.symbol}</TableCell>
-                        <TableCell>
-                          <Badge variant={position.side === 'buy' ? 'default' : 'destructive'}>
-                            {position.side?.toUpperCase() || 'UNKNOWN'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">{position.volume ?? position.lotSize}</TableCell>
-                        <TableCell className="font-mono text-sm">{position.triggerPrice ? position.triggerPrice : '-'}</TableCell>
-                        <TableCell className={`font-mono text-sm font-semibold ${getPnLColor(position.profit || 0)}`}>
-                          {formatPnL(position.profit || 0)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center justify-end gap-2 mt-3">
                             <Button variant="ghost" size="sm" onClick={refetch} className="h-8 w-8 p-0" title="Refresh">
                               <RefreshCw className="h-4 w-4" />
                             </Button>
                           </div>
-                        </TableCell>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+
+                <div className="hidden sm:block overflow-auto max-h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Position</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Symbol</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Lots</TableHead>
+                        <TableHead>Trigger Price</TableHead>
+                        <TableHead>Profit</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingPositions.map((position: Position) => (
+                        <TableRow key={position.id} className="hover:bg-muted/50">
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <span>{position.id}</span>
+                              <Badge variant="secondary">pending</Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-xs">{position.openTime ? new Date(position.openTime).toLocaleTimeString() : '-'}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-semibold">{position.symbol}</TableCell>
+                          <TableCell>
+                            <Badge variant={position.side === 'buy' ? 'default' : 'destructive'}>
+                              {position.side?.toUpperCase() || 'UNKNOWN'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{position.volume ?? position.lotSize}</TableCell>
+                          <TableCell className="font-mono text-sm">{position.triggerPrice ? position.triggerPrice : '-'}</TableCell>
+                          <TableCell className={`font-mono text-sm font-semibold ${getPnLColor(position.profit || 0)}`}>
+                            {formatPnL(position.profit || 0)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="sm" onClick={refetch} className="h-8 w-8 p-0" title="Refresh">
+                                <RefreshCw className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </TabsContent>
 
@@ -694,40 +759,57 @@ function PositionsTable() {
                 <p>No trading history</p>
               </div>
             ) : (
-              <div className="overflow-auto max-h-[500px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Position</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Symbol</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Lots</TableHead>
-                      <TableHead>Open Price</TableHead>
-                      <TableHead>Close Price</TableHead>
-                      <TableHead>S/L</TableHead>
-                      <TableHead>T/P</TableHead>
-                      <TableHead>Swap</TableHead>
-                      <TableHead>Profit</TableHead>
-                      <TableHead>Duration</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {closedPositions.map((position: Position) => {
-                      const openTime = position.openTime || position.openedAt
-                      const closeTime = position.closeTime || position.closedAt
-                      const positionType = position.positionType || position.side
-                      const volume = position.volume || position.lotSize
-                      const pnl = position.profitLoss || position.profit
-                      
-                      const duration = closeTime && openTime
-                        ? new Date(closeTime).getTime() - new Date(openTime).getTime()
-                        : 0
-                      const durationText = duration > 0 
-                        ? `${Math.floor(duration / (1000 * 60))}m`
-                        : '-'
-                      
-                      return (
+              <>
+                <div className="sm:hidden p-2 space-y-3 max-h-[50vh] overflow-auto">
+                  {closedPositions.map((position: Position) => {
+                    const openTime = position.openTime || position.openedAt
+                    const closeTime = position.closeTime || position.closedAt
+                    const positionType = position.positionType || position.side
+                    const volume = position.volume || position.lotSize
+                    const pnl = position.profitLoss || position.profit
+
+                    const duration = closeTime && openTime
+                      ? new Date(closeTime).getTime() - new Date(openTime).getTime()
+                      : 0
+                    const durationText = duration > 0 ? `${Math.floor(duration / (1000 * 60))}m` : '-'
+
+                    return (
+                      <Card key={position.id} className="p-3">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="font-semibold">{position.symbol}</div>
+                            <div className="text-xs text-muted-foreground mt-1">#{position.id} • {positionType?.toUpperCase() || 'UNKNOWN'} • {volume}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`font-mono font-semibold ${getPnLColor(pnl)}`}>{formatPnL(pnl)}</div>
+                            <div className="text-xs text-muted-foreground">{durationText}</div>
+                          </div>
+                        </div>
+                      </Card>
+                    )
+                  })}
+                </div>
+
+                <div className="hidden sm:block overflow-auto max-h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Position</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Symbol</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Lots</TableHead>
+                        <TableHead>Open Price</TableHead>
+                        <TableHead>Close Price</TableHead>
+                        <TableHead>S/L</TableHead>
+                        <TableHead>T/P</TableHead>
+                        <TableHead>Swap</TableHead>
+                        <TableHead>Profit</TableHead>
+                        <TableHead>Duration</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {closedPositions.map((position: Position) => (
                         <TableRow key={position.id}>
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
@@ -738,47 +820,46 @@ function PositionsTable() {
                           <TableCell>
                             <div className="flex items-center gap-1">
                               <Clock className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs">
-                                {openTime ? new Date(openTime).toLocaleTimeString() : '-'}
-                              </span>
+                              <span className="text-xs">{position.openTime ? new Date(position.openTime).toLocaleTimeString() : '-'}</span>
                             </div>
                           </TableCell>
                           <TableCell className="font-semibold">{position.symbol}</TableCell>
                           <TableCell>
-                            <Badge variant={positionType === 'buy' ? 'default' : 'destructive'}>
-                              {positionType?.toUpperCase() || 'UNKNOWN'}
+                            <Badge variant={position.positionType === 'buy' ? 'default' : 'destructive'}>
+                              {(position.positionType || position.side)?.toUpperCase() || 'UNKNOWN'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="font-mono text-sm">{volume}</TableCell>
+                          <TableCell className="font-mono text-sm">{position.volume ?? position.lotSize}</TableCell>
                           <TableCell className="font-mono text-sm">{formatPrice(position.openPrice)}</TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {position.closePrice ? formatPrice(position.closePrice) : '-'}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {position.stopLoss ? formatPrice(position.stopLoss) : '-'}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {position.takeProfit ? formatPrice(position.takeProfit) : '-'}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {formatPnL(position.swap)}
-                          </TableCell>
-                          <TableCell className={`font-mono text-sm font-semibold ${getPnLColor(pnl)}`}>
-                            {formatPnL(pnl)}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm text-muted-foreground">
-                            {durationText}
-                          </TableCell>
+                          <TableCell className="font-mono text-sm">{position.closePrice ? formatPrice(position.closePrice) : '-'}</TableCell>
+                          <TableCell className="font-mono text-sm">{position.stopLoss ? formatPrice(position.stopLoss) : '-'}</TableCell>
+                          <TableCell className="font-mono text-sm">{position.takeProfit ? formatPrice(position.takeProfit) : '-'}</TableCell>
+                          <TableCell className="font-mono text-sm">{formatPnL(position.swap)}</TableCell>
+                          <TableCell className={`font-mono text-sm font-semibold ${getPnLColor(position.profit || 0)}`}>{formatPnL(position.profit || 0)}</TableCell>
+                          <TableCell className="font-mono text-sm text-muted-foreground">{
+                            (() => {
+                              try {
+                                const closedTs = position.closedAt ? new Date(position.closedAt).getTime() : null
+                                const openedTs = position.openedAt ? new Date(position.openedAt).getTime() : (position.openTime ? new Date(position.openTime).getTime() : null)
+                                if (closedTs && openedTs && !isNaN(closedTs) && !isNaN(openedTs)) {
+                                  return `${Math.floor((closedTs - openedTs) / (1000 * 60))}m`
+                                }
+                                return '-'
+                              } catch {
+                                return '-'
+                              }
+                            })()
+                          }</TableCell>
                         </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </TabsContent>
         </Tabs>
-      </CardContent>
+  </CardContent>
       
       {/* Phase 5: Position Details Modal */}
       <Dialog open={!!detailsModalPosition} onOpenChange={(open) => !open && setDetailsModalPosition(null)}>

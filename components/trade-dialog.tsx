@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { TrendingUp, TrendingDown, Loader2, Calculator, Info } from "lucide-react"
+import { TrendingUp, TrendingDown, Loader2 } from "lucide-react"
 import { useTrading } from "@/contexts/TradingContext"
 import { useToast } from "@/hooks/use-toast"
 import { enhancedTradingService } from "@/lib/services"
@@ -34,9 +34,7 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
   const [isLoading, setIsLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   
-  // Phase 5 Enhancements: Leverage, margin, and risk calculations
-  const [selectedLeverage, setSelectedLeverage] = useState<number | null>(null)
-  const [leverageOptions, setLeverageOptions] = useState<number[]>([])
+  // Phase 5 Enhancements removed: leverage selection simplified
   const [marginInfo, setMarginInfo] = useState<{
     balance?: number
     equity?: number
@@ -44,7 +42,7 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
     freeMargin?: number
     marginLevel?: number
   } | null>(null)
-  const [riskAmount, setRiskAmount] = useState("")
+  // risk amount removed; quick position-from-risk UI removed
 
   const { activeAccount, accounts, openPosition } = useTrading()
   const { toast } = useToast()
@@ -55,35 +53,15 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
   const slPrice = parseFloat(stopLoss) || 0
   const tpPrice = parseFloat(takeProfit) || 0
 
-  // Load leverage options and margin info when dialog opens
+  // Load margin info when dialog opens
   useEffect(() => {
     if (isOpen && activeAccount?.id) {
-      loadLeverageOptions()
       loadMarginInfo()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeAccount?.id])
 
-  // Update margin info when volume or leverage changes
-  useEffect(() => {
-    if (isOpen && activeAccount?.id && (lotSize > 0 || selectedLeverage)) {
-      loadMarginInfo()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lotSize, selectedLeverage, isOpen, activeAccount?.id])
-
-  const loadLeverageOptions = async () => {
-    try {
-      const response = await enhancedTradingService.getLeverageOptions()
-      const options = response.data || []
-      setLeverageOptions(options)
-      if (activeAccount && options.length > 0) {
-        setSelectedLeverage(activeAccount.leverage || options[0])
-      }
-    } catch (error) {
-      console.error('Failed to load leverage options:', error)
-    }
-  }
+  // leverage options removed; no-op function
 
   const loadMarginInfo = async () => {
     if (!activeAccount?.id) return
@@ -95,14 +73,14 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
     }
   }
 
-  // Calculate required margin for this trade
+  // Calculate required margin for this trade (use account leverage or default)
   const requiredMargin = useMemo(() => {
     if (!lotSize || !currentPrice) return 0
-    const leverage = selectedLeverage || activeAccount?.leverage || 100
+    const leverage = activeAccount?.leverage || 100
     const contractSize = 100000 // Standard lot
     const positionValue = lotSize * contractSize * currentPrice
     return positionValue / leverage
-  }, [lotSize, currentPrice, selectedLeverage, activeAccount?.leverage])
+  }, [lotSize, currentPrice, activeAccount?.leverage])
 
   // Calculate SL/TP in pips and risk amount
   const slCalculation = useMemo(() => {
@@ -123,35 +101,7 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
     return { pips: pips.toFixed(1), reward: rewardDollar.toFixed(2) }
   }, [tpPrice, currentPrice, lotSize])
 
-  // Calculate position size from risk amount
-  const calculatePositionFromRisk = () => {
-    if (!riskAmount || !slPrice || !currentPrice) {
-      toast({
-        title: "Missing Information",
-        description: "Please enter risk amount and stop loss to calculate position size",
-        variant: "destructive"
-      })
-      return
-    }
-    const risk = parseFloat(riskAmount)
-    const pipValue = 10
-    const priceDiff = Math.abs(slPrice - currentPrice)
-    const pips = priceDiff * 10000
-    if (pips === 0) {
-      toast({
-        title: "Invalid Stop Loss",
-        description: "Stop loss is too close to current price",
-        variant: "destructive"
-      })
-      return
-    }
-    const calculatedLots = risk / (pips * pipValue)
-    setVolume(calculatedLots.toFixed(2))
-    toast({
-      title: "Position Size Calculated",
-      description: `${calculatedLots.toFixed(2)} lots for $${risk} risk`,
-    })
-  }
+  // calculatePositionFromRisk removed
 
   // Estimate commission (simplified - should come from backend)
   const estimatedCommission = useMemo(() => {
@@ -249,7 +199,7 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl max-h-[70vh] overflow-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             {isBuy ? (
@@ -280,24 +230,7 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
 
             <TabsContent value="market" className="space-y-4 mt-4">
               {/* Phase 5: Leverage Selector */}
-              <div className="space-y-2">
-                <Label htmlFor="leverage">Leverage</Label>
-                <Select 
-                  value={selectedLeverage?.toString() || ""} 
-                  onValueChange={(v) => setSelectedLeverage(parseInt(v))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select leverage" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {leverageOptions.map((lev) => (
-                      <SelectItem key={lev} value={lev.toString()}>
-                        1:{lev}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Leverage selector removed for simplified dialog */}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -327,11 +260,10 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
               {/* Phase 5: Margin Calculator Card */}
               {lotSize > 0 && (
                 <Card className="p-3 bg-muted/30 border-muted">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calculator className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Margin Calculation</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-medium">Margin Calculation</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <p className="text-muted-foreground">Required Margin</p>
                       <p className="font-mono font-semibold">${requiredMargin.toFixed(2)}</p>
@@ -363,31 +295,7 @@ export function TradeDialog({ symbol, symbolId, price, type, children }: TradeDi
               )}
 
               {/* Phase 5: Position Size from Risk Calculator */}
-              <Card className="p-3 bg-primary/5 border-primary/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <Info className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">Calculate Position from Risk</span>
-                </div>
-                <div className="flex gap-2">
-                  <Input 
-                    placeholder="Risk amount ($)" 
-                    value={riskAmount}
-                    onChange={(e) => setRiskAmount(e.target.value)}
-                    className="flex-1 font-mono"
-                  />
-                  <Button 
-                    onClick={calculatePositionFromRisk}
-                    variant="outline"
-                    size="sm"
-                    disabled={!riskAmount || !stopLoss}
-                  >
-                    Calculate
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Enter risk amount and stop loss to calculate optimal position size
-                </p>
-              </Card>
+              {/* Position-from-risk calculator removed */}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

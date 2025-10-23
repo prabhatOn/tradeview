@@ -856,8 +856,9 @@ export default function AdminTradesPage() {
           </Alert>
         )}
 
-        <div className="w-full overflow-x-auto rounded-lg border border-border/60">
-          <Table className="min-w-[1100px]">
+        <div className="hidden sm:block">
+          <div className="w-full overflow-x-auto rounded-lg border border-border/60">
+            <Table className="min-w-[1100px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[120px]">Trade</TableHead>
@@ -975,7 +976,66 @@ export default function AdminTradesPage() {
                     })
                   )}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
+        </div>
+
+        {/* Mobile list (xs only) */}
+        <div className="space-y-3 sm:hidden">
+          {positionsLoading ? (
+            Array.from({ length: 6 }).map((_, idx) => (
+              <div key={`pos-skel-${idx}`} className="animate-pulse bg-card/20 rounded-lg p-3">
+                <div className="h-4 w-24 mb-2 bg-muted/40 rounded" />
+                <div className="h-3 w-32 mb-1 bg-muted/30 rounded" />
+                <div className="h-3 w-20 bg-muted/30 rounded" />
+              </div>
+            ))
+          ) : positions.length === 0 ? (
+            <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">No positions found for the current filters.</div>
+          ) : (
+            positions.map((position) => {
+              const pnlValue = activeTab === "open" ? position.unrealizedPnl ?? 0 : position.netProfit ?? 0
+              const priceValue = activeTab === "open" ? position.currentPrice : position.closePrice ?? position.currentPrice ?? position.openPrice
+              return (
+                <div key={`pos-${position.id}`} className="bg-card/40 border border-border/10 rounded-lg p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center space-x-2 font-semibold">
+                        <span className="truncate">#{position.id}</span>
+                        <span className="text-xs text-muted-foreground">{position.userName ?? position.userEmail}</span>
+                      </div>
+                      <div className="text-sm text-muted-foreground truncate">{position.symbol} • {position.symbolName}</div>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-3">
+                      <div className={cn("text-sm font-mono font-semibold", classForPnL(pnlValue))}>{formatCurrency(pnlValue)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center space-x-3 text-sm text-muted-foreground">
+                      <div>{renderSideBadge(position.side)}</div>
+                      <div>{formatNumber(position.lotSize, 2)} lots</div>
+                      <div>Price: {formatPrice(priceValue)}</div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button variant="ghost" size="icon" onClick={() => handleViewPosition(position)} title="View details">
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      {position.status === "open" && (
+                        <Button variant="ghost" size="icon" onClick={() => handleEditPosition(position)} title="Modify position">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {position.status === "open" && (
+                        <Button variant="ghost" size="icon" onClick={() => handleClosePosition(position)} title="Close position" disabled={closingPositionIds.includes(position.id)}>
+                          <XCircle className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
         </div>
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1015,7 +1075,7 @@ export default function AdminTradesPage() {
   return (
     <ProtectedRoute requireAdmin>
       <AdminLayout sidebarItems={adminSidebarItems} topBarConfig={adminTopBarConfig}>
-        <div className="space-y-8">
+    <div className="space-y-8 pb-24">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-foreground">Trades Management</h1>
@@ -1177,13 +1237,13 @@ export default function AdminTradesPage() {
           <Card className="bg-card/40 backdrop-blur-xl border border-border/20 shadow-lg">
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as PositionsTab)} className="w-full">
               <CardHeader className="pb-0">
-                <TabsList className="grid w-full grid-cols-2 bg-muted/30 backdrop-blur-sm">
-                  <TabsTrigger value="open" className="flex items-center justify-center gap-2">
-                    <Activity className="h-4 w-4" />
+                <TabsList className="grid w-full grid-cols-2 bg-muted/30 backdrop-blur-sm text-sm">
+                  <TabsTrigger value="open" className="flex items-center justify-center gap-2 px-2 py-1 text-sm sm:text-base">
+                    
                     <span>Open Positions</span>
                   </TabsTrigger>
-                  <TabsTrigger value="closed" className="flex items-center justify-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
+                  <TabsTrigger value="closed" className="flex items-center justify-center gap-2 px-2 py-1 text-sm sm:text-base">
+                    
                     <span>Closed Positions</span>
                   </TabsTrigger>
                 </TabsList>
@@ -1201,7 +1261,7 @@ export default function AdminTradesPage() {
         </div>
 
         <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DialogContent className="max-w-2xl">
+    <DialogContent className="w-full max-w-full sm:max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Position details</DialogTitle>
               <DialogDescription>Review the full lifecycle of this trade.</DialogDescription>
@@ -1314,7 +1374,7 @@ export default function AdminTradesPage() {
         </Dialog>
 
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="max-w-lg">
+    <DialogContent className="w-full max-w-full sm:max-w-lg max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Modify position</DialogTitle>
               <DialogDescription>Update trade parameters for this position.</DialogDescription>
@@ -1373,7 +1433,7 @@ export default function AdminTradesPage() {
         </Dialog>
 
         <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="w-full max-w-full sm:max-w-lg max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Close position</DialogTitle>
               <DialogDescription>Set an optional close price and reason before confirming.</DialogDescription>
@@ -1422,7 +1482,7 @@ export default function AdminTradesPage() {
         </Dialog>
 
         <Dialog open={newTradeDialogOpen} onOpenChange={setNewTradeDialogOpen}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="w-full max-w-full sm:max-w-3xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Open new trade</DialogTitle>
               <DialogDescription>Create a new position on behalf of a user.</DialogDescription>

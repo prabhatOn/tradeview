@@ -166,23 +166,74 @@ wss.on('connection', (ws) => {
     try {
       const data = JSON.parse(message);
       
+      // Validate message structure
+      if (!data || typeof data !== 'object' || !data.type) {
+        ws.send(JSON.stringify({ 
+          type: 'error', 
+          message: 'Invalid message format. Message must be a JSON object with a "type" field.' 
+        }));
+        return;
+      }
+
       switch (data.type) {
         case 'subscribe_market':
+          // Validate symbols array
+          if (!Array.isArray(data.symbols)) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              message: 'Invalid subscribe_market message. "symbols" must be an array.' 
+            }));
+            return;
+          }
+          // Validate each symbol is a string
+          if (!data.symbols.every(symbol => typeof symbol === 'string' && symbol.length > 0)) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              message: 'Invalid subscribe_market message. All symbols must be non-empty strings.' 
+            }));
+            return;
+          }
           // Subscribe to market data updates
-          ws.subscribedSymbols = data.symbols || [];
+          ws.subscribedSymbols = data.symbols;
+          ws.send(JSON.stringify({ 
+            type: 'subscribed_market', 
+            message: `Subscribed to ${data.symbols.length} symbols` 
+          }));
           break;
+          
         case 'subscribe_account':
+          // Validate userId
+          if (!data.userId || typeof data.userId !== 'number' || data.userId <= 0) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              message: 'Invalid subscribe_account message. "userId" must be a positive number.' 
+            }));
+            return;
+          }
           // Subscribe to account updates
           ws.userId = data.userId;
+          ws.send(JSON.stringify({ 
+            type: 'subscribed_account', 
+            message: `Subscribed to account updates for user ${data.userId}` 
+          }));
           break;
+          
         case 'ping':
           ws.send(JSON.stringify({ type: 'pong' }));
           break;
+          
         default:
-          console.log('Unknown message type:', data.type);
+          ws.send(JSON.stringify({ 
+            type: 'error', 
+            message: `Unknown message type: ${data.type}` 
+          }));
       }
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
+      ws.send(JSON.stringify({ 
+        type: 'error', 
+        message: 'Invalid JSON format' 
+      }));
     }
   });
 

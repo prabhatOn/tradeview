@@ -326,6 +326,15 @@ export interface AdminFundsTransactionRow {
   email: string;
   user_name?: string | null;
   account_number: string;
+  // Bank details (for withdrawals)
+  bank_name?: string | null;
+  bank_account_name?: string | null;
+  bank_account_number?: string | null;
+  account_type?: string | null;
+  iban?: string | null;
+  swift_code?: string | null;
+  routing_number?: string | null;
+  branch_name?: string | null;
 }
 
 export interface AdminFundsTransactionsResponse {

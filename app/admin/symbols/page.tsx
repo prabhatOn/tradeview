@@ -60,6 +60,47 @@ interface Category {
   description: string
 }
 
+type CreateSymbolPayload = {
+  symbol: string
+  name: string
+  category_id: number
+  base_currency?: string
+  quote_currency?: string
+  pip_size?: number
+  lot_size?: number
+  min_lot?: number
+  max_lot?: number
+  lot_step?: number
+  contract_size?: number
+  margin_requirement?: number
+  spread_type?: 'fixed' | 'floating'
+  spread_markup?: number
+  commission_type?: 'per_lot' | 'percentage' | 'fixed'
+  commission_value?: number
+  swap_long?: number
+  swap_short?: number
+  is_active?: boolean
+}
+
+function getErrorMessage(error: unknown): string {
+  if (!error) return ''
+  if (typeof error === 'string') return error
+  if (typeof error === 'object') {
+    try {
+      const e = error as Record<string, unknown>
+      if (typeof e.message === 'string') return e.message
+      if (e.response && typeof e.response === 'object') {
+        const resp = e.response as Record<string, unknown>
+    if (resp.data && typeof (resp.data as Record<string, unknown>).message === 'string') return (resp.data as Record<string, unknown>).message as string
+      }
+      return JSON.stringify(e)
+    } catch {
+      return String(error)
+    }
+  }
+  return String(error)
+}
+
 export default function SymbolManagementPage() {
   const { toast } = useToast()
   const [symbols, setSymbols] = useState<SymbolRow[]>([])
@@ -72,7 +113,7 @@ export default function SymbolManagementPage() {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [selectedSymbol, setSelectedSymbol] = useState<SymbolRow | null>(null)
-  const [formData, setFormData] = useState<any>({})
+  const [formData, setFormData] = useState<Partial<CreateSymbolPayload>>({})
   const [submitting, setSubmitting] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -115,16 +156,12 @@ export default function SymbolManagementPage() {
       } else {
         console.error('❌ Failed to load categories:', categoriesRes)
       }
-    } catch (error: any) {
-      console.error('💥 Error in loadData:', error)
-      console.error('Error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      })
+    } catch (error) {
+      const msg = getErrorMessage(error)
+      console.error('💥 Error in loadData:', msg, { error })
       toast({
         title: "Error",
-        description: error?.response?.data?.message || error?.message || "Failed to load symbols",
+        description: msg || "Failed to load symbols",
         variant: "destructive"
       })
     } finally {
@@ -139,7 +176,28 @@ export default function SymbolManagementPage() {
   const handleCreateSymbol = async () => {
     try {
       setSubmitting(true)
-      const res = await adminSymbolService.createSymbol(formData)
+      const payload: CreateSymbolPayload = {
+        symbol: String(formData.symbol || ''),
+        name: String(formData.name || ''),
+        category_id: Number(formData.category_id ?? categories[0]?.id ?? 1),
+        base_currency: formData.base_currency ? String(formData.base_currency) : undefined,
+        quote_currency: formData.quote_currency ? String(formData.quote_currency) : undefined,
+        pip_size: Number(formData.pip_size ?? 0.0001),
+        lot_size: Number(formData.lot_size ?? 100000),
+        min_lot: Number(formData.min_lot ?? 0.01),
+        max_lot: Number(formData.max_lot ?? 100),
+        lot_step: Number(formData.lot_step ?? 0.01),
+        contract_size: Number(formData.contract_size ?? 100000),
+        margin_requirement: Number(formData.margin_requirement ?? 1.0),
+        spread_type: (formData.spread_type as 'fixed' | 'floating') ?? 'floating',
+        spread_markup: Number(formData.spread_markup ?? 0),
+        commission_type: (formData.commission_type as CreateSymbolPayload['commission_type']) ?? 'per_lot',
+        commission_value: Number(formData.commission_value ?? 0),
+        swap_long: Number(formData.swap_long ?? 0),
+        swap_short: Number(formData.swap_short ?? 0),
+        is_active: Boolean(formData.is_active ?? true),
+      }
+      const res = await adminSymbolService.createSymbol(payload)
       
       if (res.success) {
         toast({
@@ -150,10 +208,11 @@ export default function SymbolManagementPage() {
         setFormData({})
         loadData()
       }
-    } catch (error: any) {
+    } catch (error) {
+      const msg = getErrorMessage(error)
       toast({
         title: "Error",
-        description: error?.response?.data?.message || "Failed to create symbol",
+        description: msg || "Failed to create symbol",
         variant: "destructive"
       })
     } finally {
@@ -166,7 +225,28 @@ export default function SymbolManagementPage() {
     
     try {
       setSubmitting(true)
-      const res = await adminSymbolService.updateSymbol(selectedSymbol.id, formData)
+      const payload: CreateSymbolPayload = {
+        symbol: String(formData.symbol || selectedSymbol.name || ''),
+        name: String(formData.name || selectedSymbol.name || ''),
+        category_id: Number(formData.category_id ?? selectedSymbol.category_id ?? categories[0]?.id ?? 1),
+        base_currency: formData.base_currency ? String(formData.base_currency) : undefined,
+        quote_currency: formData.quote_currency ? String(formData.quote_currency) : undefined,
+        pip_size: Number(formData.pip_size ?? selectedSymbol.pip_size ?? 0),
+        lot_size: Number(formData.lot_size ?? selectedSymbol.lot_size ?? 0),
+        min_lot: Number(formData.min_lot ?? selectedSymbol.min_lot ?? 0),
+        max_lot: Number(formData.max_lot ?? selectedSymbol.max_lot ?? 0),
+        lot_step: Number(formData.lot_step ?? selectedSymbol.lot_step ?? 0),
+        contract_size: Number(formData.contract_size ?? selectedSymbol.contract_size ?? 0),
+        margin_requirement: Number(formData.margin_requirement ?? selectedSymbol.margin_requirement ?? 1.0),
+        spread_type: (formData.spread_type as 'fixed' | 'floating') ?? (selectedSymbol.spread_type ?? 'floating'),
+        spread_markup: Number(formData.spread_markup ?? selectedSymbol.spread_markup ?? 0),
+  commission_type: (formData.commission_type as CreateSymbolPayload['commission_type']) ?? (selectedSymbol.commission_type as CreateSymbolPayload['commission_type']) ?? 'per_lot',
+        commission_value: Number(formData.commission_value ?? selectedSymbol.commission_value ?? 0),
+        swap_long: Number(formData.swap_long ?? selectedSymbol.swap_long ?? 0),
+        swap_short: Number(formData.swap_short ?? selectedSymbol.swap_short ?? 0),
+        is_active: Boolean(formData.is_active ?? selectedSymbol.is_active ?? true),
+      }
+      const res = await adminSymbolService.updateSymbol(selectedSymbol.id, payload)
       
       if (res.success) {
         toast({
@@ -178,10 +258,11 @@ export default function SymbolManagementPage() {
         setFormData({})
         loadData()
       }
-    } catch (error: any) {
+    } catch (error) {
+      const msg = getErrorMessage(error)
       toast({
         title: "Error",
-        description: error?.response?.data?.message || "Failed to update symbol",
+        description: msg || "Failed to update symbol",
         variant: "destructive"
       })
     } finally {
@@ -205,10 +286,11 @@ export default function SymbolManagementPage() {
         setSelectedSymbol(null)
         loadData()
       }
-    } catch (error: any) {
+    } catch (error) {
+      const msg = getErrorMessage(error)
       toast({
         title: "Error",
-        description: error?.response?.data?.message || "Failed to delete symbol",
+        description: msg || "Failed to delete symbol",
         variant: "destructive"
       })
     } finally {
@@ -227,10 +309,11 @@ export default function SymbolManagementPage() {
         })
         loadData()
       }
-    } catch (error: any) {
+    } catch (error) {
+      const msg = getErrorMessage(error)
       toast({
         title: "Error",
-        description: error?.response?.data?.message || "Failed to toggle symbol status",
+        description: msg || "Failed to toggle symbol status",
         variant: "destructive"
       })
     }
@@ -298,17 +381,19 @@ export default function SymbolManagementPage() {
     <AdminLayout sidebarItems={adminSidebarItems} topBarConfig={adminTopBarConfig}>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Symbol Management</h1>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold tracking-tight leading-tight">Symbol Management</h1>
             <p className="text-muted-foreground mt-1">
               Manage trading symbols and currency pairs
             </p>
           </div>
-          <Button onClick={openCreateDialog}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Symbol
-          </Button>
+          <div className="w-full sm:w-auto">
+            <Button onClick={openCreateDialog} className="w-full sm:w-auto">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Symbol
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -492,7 +577,7 @@ export default function SymbolManagementPage() {
 
         {/* Create Dialog */}
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Symbol</DialogTitle>
               <DialogDescription>
@@ -500,7 +585,7 @@ export default function SymbolManagementPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Symbol *</Label>
                   <Input
@@ -519,7 +604,7 @@ export default function SymbolManagementPage() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Category *</Label>
                   <Select
@@ -542,7 +627,7 @@ export default function SymbolManagementPage() {
                   <Label>Spread Type</Label>
                   <Select
                     value={formData.spread_type || 'floating'}
-                    onValueChange={(value) => setFormData({ ...formData, spread_type: value })}
+                    onValueChange={(value) => setFormData({ ...formData, spread_type: value as 'fixed' | 'floating' })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -555,7 +640,7 @@ export default function SymbolManagementPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Base Currency</Label>
                   <Input
@@ -574,7 +659,7 @@ export default function SymbolManagementPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Pip Size</Label>
                   <Input
@@ -602,7 +687,7 @@ export default function SymbolManagementPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Min Lot</Label>
                   <Input
@@ -631,7 +716,7 @@ export default function SymbolManagementPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Swap Long</Label>
                   <Input
@@ -652,11 +737,11 @@ export default function SymbolManagementPage() {
                 </div>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+            <DialogFooter className="flex flex-col sm:flex-row gap-2">
+              <Button variant="outline" onClick={() => setShowCreateDialog(false)} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button onClick={handleCreateSymbol} disabled={submitting}>
+              <Button onClick={handleCreateSymbol} disabled={submitting} className="w-full sm:w-auto">
                 {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Create Symbol
               </Button>
@@ -705,7 +790,7 @@ export default function SymbolManagementPage() {
                   <Label>Spread Type</Label>
                   <Select
                     value={formData.spread_type || 'floating'}
-                    onValueChange={(value) => setFormData({ ...formData, spread_type: value })}
+                    onValueChange={(value) => setFormData({ ...formData, spread_type: value as 'fixed' | 'floating' })}
                   >
                     <SelectTrigger>
                       <SelectValue />

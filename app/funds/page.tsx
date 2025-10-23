@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, FormEvent, useEffect } from "react"
+import { useState, FormEvent, useEffect, useCallback } from "react"
 import { useSidebarCollapsed } from '@/hooks/use-sidebar-collapsed'
 import { useAuth } from '@/hooks/use-auth'
 import { useTrading } from '@/contexts/TradingContext'
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { DownloadCloud, UploadCloud, ArrowRight, Bell, CheckCircle, AlertTriangle, Clock, ArrowDown, ArrowUp, TrendingUp, TrendingDown, DollarSign, Wallet, CreditCard, Banknote } from "lucide-react"
+import { DownloadCloud, UploadCloud, TrendingUp, TrendingDown, DollarSign, Wallet, CreditCard } from "lucide-react"
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
@@ -29,11 +29,16 @@ import {
 interface FundingMethod {
   type: string;
   name: string;
-  depositLimits: { min: number; max: number };
-  withdrawalLimits: { min: number; max: number };
-  processingTime: string;
-  fees: { deposit: string | number; withdrawal: string | number };
-  available: boolean;
+  // Optional simple numeric range/fee fields (used by defaultMethods)
+  minAmount?: number;
+  maxAmount?: number;
+  fee?: number | string;
+  processingTime?: string;
+  available?: boolean;
+  // Optional detailed fee/limit structures (some APIs may return these)
+  depositLimits?: { min: number; max: number };
+  withdrawalLimits?: { min: number; max: number };
+  fees?: { deposit: string | number; withdrawal: string | number };
 }
 
 interface AccountStats {
@@ -118,7 +123,7 @@ export default function FundsPage() {
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false)
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false)
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     console.log('fetchData called - user:', user?.id, 'activeAccount:', activeAccount?.id)
     
     // Set default data from activeAccount and accountSummary first
@@ -222,8 +227,9 @@ export default function FundsPage() {
           setAccountStats(statsData)
           console.log('Set account stats:', statsData)
         }
-      } catch (error) {
-        console.error('Error fetching account stats, keeping default data:', error)
+      } catch (error: unknown) {
+        const e = error as ApiError
+        console.error('Error fetching account stats, keeping default data:', e.response?.data ?? e.message ?? error)
         // Keep the default data that was already set
       }
       
@@ -235,8 +241,9 @@ export default function FundsPage() {
           setBalanceHistory(historyData)
           console.log('Set balance history:', historyData)
         }
-      } catch (error) {
-        console.error('Error fetching balance history:', error)
+      } catch (error: unknown) {
+        const e = error as ApiError
+        console.error('Error fetching balance history:', e.response?.data ?? e.message ?? error)
         setBalanceHistory([])
       }
       
@@ -247,8 +254,9 @@ export default function FundsPage() {
           methodsData = methodsResponse.data
           setFundingMethods(methodsData)
         }
-      } catch (error) {
-        console.error('Error fetching funding methods:', error)
+      } catch (error: unknown) {
+        const e = error as ApiError
+        console.error('Error fetching funding methods:', e.response?.data ?? e.message ?? error)
         // Keep the default methods that were already set
       }
       
@@ -260,8 +268,9 @@ export default function FundsPage() {
           setPerformanceData(performanceDataResult)
           console.log('Set performance data:', performanceDataResult)
         }
-      } catch (error) {
-        console.error('Error fetching performance data, keeping default data:', error)
+      } catch (error: unknown) {
+        const e = error as ApiError
+        console.error('Error fetching performance data, keeping default data:', e.response?.data ?? e.message ?? error)
         // Keep the default data that was already set
       }
       
@@ -271,8 +280,9 @@ export default function FundsPage() {
         performanceData: performanceDataResult,
         balanceHistoryLength: historyData?.length || 0
       })
-    } catch (error) {
-      console.error('Error in fetchData:', error)
+    } catch (error: unknown) {
+        const e = error as ApiError
+        console.error('Error in fetchData:', e.response?.data ?? e.message ?? error)
       toast({
         title: "Error",
         description: "Failed to load account information",
@@ -282,12 +292,12 @@ export default function FundsPage() {
       setIsLoading(false)
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }
+  }, [user, activeAccount, toast])
 
   useEffect(() => {
     console.log('Funds page useEffect triggered - user:', user, 'activeAccount:', activeAccount)
     fetchData()
-  }, [user, activeAccount])
+  }, [user, activeAccount, fetchData])
 
   // Refresh funds data when trading context changes (e.g., positions closed)
   useEffect(() => {
@@ -295,7 +305,7 @@ export default function FundsPage() {
     if (activeAccount) {
       fetchData()
     }
-  }, [positions, accountSummary]) // Re-fetch when positions or account summary changes
+  }, [positions, accountSummary, activeAccount, fetchData]) // Re-fetch when positions or account summary changes
 
   // Listen for real-time balance updates via WebSocket
   useEffect(() => {
@@ -390,10 +400,11 @@ export default function FundsPage() {
         // Refresh data
         await fetchData()
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const e = error as ApiError
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Failed to process deposit",
+        description: e.response?.data?.message || e.message || "Failed to process deposit",
         variant: "destructive"
       })
     } finally {
@@ -439,10 +450,11 @@ export default function FundsPage() {
         // Refresh data
         await fetchData()
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const e = error as ApiError
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Failed to process withdrawal",
+        description: e.response?.data?.message || e.message || "Failed to process withdrawal",
         variant: "destructive"
       })
     } finally {
@@ -496,7 +508,7 @@ export default function FundsPage() {
         <div className="flex flex-1 overflow-hidden">
           <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
           <main className={`flex-1 flex items-center justify-center transition-all duration-300 ${
-            sidebarCollapsed ? "pl-20 pr-6" : "pl-68 pr-6"
+            sidebarCollapsed ? "sm:pl-20 pl-4 pr-6" : "sm:pl-68 pl-4 pr-6"
           }`}>
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -514,7 +526,7 @@ export default function FundsPage() {
         <div className="flex flex-1 overflow-hidden">
           <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
           <main className={`flex-1 flex items-center justify-center transition-all duration-300 ${
-            sidebarCollapsed ? "pl-20 pr-6" : "pl-68 pr-6"
+            sidebarCollapsed ? "sm:pl-20 pl-4 pr-6" : "sm:pl-68 pl-4 pr-6"
           }`}>
             <div className="text-center">
               <div className="p-4 rounded-full bg-muted/20 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
@@ -537,16 +549,16 @@ export default function FundsPage() {
       <div className="flex flex-1 overflow-hidden">
         <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
         
-        <main className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full ${
-          sidebarCollapsed ? "pl-20 pr-6 pt-6 pb-6" : "pl-68 pr-6 pt-6 pb-6"
+        <main className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full max-w-screen-xl mx-auto ${
+          sidebarCollapsed ? "sm:pl-20 pl-4 pr-4 sm:pr-6 pt-6 sm:pb-6 pb-28" : "sm:pl-68 pl-4 pr-4 sm:pr-6 pt-6 sm:pb-6 pb-28"
         }`}>
           {/* Page Header */}
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-col sm:flex-row items-center sm:items-center justify-between w-full gap-3">
+            <div className="w-full text-center sm:text-left">
               <h1 className="text-2xl font-bold">Fund Management</h1>
               <p className="text-muted-foreground">Manage deposits, withdrawals and track your account performance</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 self-center sm:self-auto">
               <Badge variant="outline" className="text-xs">
                 Account #{activeAccount?.accountNumber}
               </Badge>
@@ -903,9 +915,12 @@ export default function FundsPage() {
               <div className="divide-y divide-border/50">
                 {balanceHistory.length > 0 ? (
                   balanceHistory.map((transaction, index) => (
-                    <div key={transaction.id} className={`flex items-center justify-between p-4 hover:bg-muted/30 transition-colors ${index === 0 ? 'bg-muted/20' : ''}`}>
-                      <div className="flex items-center space-x-4">
-                        <div className={`p-2 rounded-full ${
+                    <div
+                      key={transaction.id}
+                      className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 hover:bg-muted/30 transition-colors w-full overflow-hidden ${index === 0 ? 'bg-muted/20' : ''}`}
+                    >
+                      <div className="flex items-center space-x-4 min-w-0 flex-1 overflow-hidden">
+                        <div className={`p-2 rounded-full flex-shrink-0 ${
                           transaction.change_type === 'deposit' ? 'bg-green-100 dark:bg-green-900/20' :
                           transaction.change_type === 'withdrawal' ? 'bg-red-100 dark:bg-red-900/20' :
                           transaction.change_type === 'trade_profit' ? 'bg-blue-100 dark:bg-blue-900/20' :
@@ -914,22 +929,28 @@ export default function FundsPage() {
                         }`}>
                           {getStatusIcon(transaction.change_type)}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-sm truncate">
+
+                        <div className="min-w-0 overflow-hidden">
+                          <p
+                            className="font-medium text-sm whitespace-normal"
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden'
+                            }}
+                          >
                             {transaction.notes || 'Transaction'}
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            {transaction.formatted_date}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{transaction.formatted_date}</p>
                         </div>
                       </div>
-                      <div className="text-right flex-shrink-0 ml-4">
-                        <p className={`font-semibold text-sm ${getStatusColor(transaction.change_type)}`}>
+
+                      <div className="w-full sm:w-40 mt-3 sm:mt-0 sm:flex-shrink-0 flex flex-col sm:items-end items-start">
+                        <p className={`font-semibold text-sm ${getStatusColor(transaction.change_type)} break-all text-right sm:text-right`}> 
                           {transaction.change_amount >= 0 ? '+' : ''}${Math.abs(transaction.change_amount).toFixed(2)}
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          Balance: ${transaction.new_balance.toFixed(2)}
-                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">Balance: ${transaction.new_balance.toFixed(2)}</p>
                       </div>
                     </div>
                   ))
@@ -950,4 +971,10 @@ export default function FundsPage() {
       </div>
     </div>
   )
+}
+
+// Lightweight error shape used for safe error handling without `any`
+type ApiError = {
+  response?: { data?: { message?: string } };
+  message?: string;
 }

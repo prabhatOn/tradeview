@@ -45,7 +45,8 @@ import {
   Edit,
   Loader2,
   RefreshCw,
-  Search
+  Search,
+  Edit2
 } from "lucide-react"
 import { Position } from "@/lib/types"
 import { normalizePositions, formatPrice, formatPnL, getPnLColor } from "@/lib/utils-trading"
@@ -346,8 +347,8 @@ export default function PositionsPage() {
               collapsed={sidebarCollapsed}
               onCollapsedChange={setSidebarCollapsed}
             />
-            <main className={`flex-1 flex items-center justify-center ${
-              sidebarCollapsed ? "pl-20" : "pl-68"
+            <main className={`flex-1 flex items-center justify-center transition-all duration-300 ${
+              sidebarCollapsed ? "sm:pl-20 pl-4" : "sm:pl-68 pl-4"
             }`}>
               <Card className="p-8">
                 <CardContent>
@@ -376,19 +377,21 @@ export default function PositionsPage() {
 
           {/* Main Content */}
           <main
-            className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full ${
-              sidebarCollapsed ? "pl-20 pr-6 pt-6 pb-6" : "pl-68 pr-6 pt-6 pb-6"
+            className={`flex-1 flex flex-col gap-6 overflow-auto transition-all duration-300 w-full px-4 sm:px-6 lg:px-8 ${
+              sidebarCollapsed
+                ? "lg:ml-16 ml-0 pr-0 pt-4 sm:pt-6 sm:pb-6 pb-28 lg:max-w-[calc(100%-80px)]"
+                : "lg:ml-64 ml-0 pr-0 pt-4 sm:pt-6 sm:pb-6 pb-28 lg:max-w-[calc(100%-272px)]"
             }`}
           >
             {/* Header with Actions */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">Positions</h1>
+            <div className="flex flex-col sm:flex-row items-center sm:items-center justify-between w-full gap-3">
+              <div className="w-full text-center sm:text-left">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Positions</h1>
                 <p className="text-muted-foreground">
                   Manage your trading positions and track performance
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 self-center sm:self-auto">
                 {lastUpdate && (
                   <span className="text-xs text-muted-foreground">
                     Updated: {lastUpdate}
@@ -535,7 +538,109 @@ export default function PositionsPage() {
                         {/* New position action removed as requested */}
                       </div>
                     ) : (
-                      <div className="overflow-auto">
+                      <>
+                        {/* Mobile card list: visible on small screens */}
+                        <div className="sm:hidden p-2 space-y-3 max-h-[60vh] overflow-auto">
+                          {openPositions.map((position: Position) => {
+                            const pnl = position.unrealizedPnl ?? position.profit ?? 0
+                            const volume = position.volume ?? position.lotSize ?? 0
+                            const currentPrice = position.currentPrice ?? position.openPrice
+                            return (
+                              <Card key={position.id} className="p-3">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="font-semibold">{position.symbol}</div>
+                                      <Badge variant={position.status === 'open' ? 'default' : 'secondary'} className="text-xs">
+                                        {position.status}
+                                      </Badge>
+                                      <Badge variant={position.side === 'buy' ? 'default' : 'destructive'} className="text-xs">
+                                        {position.side?.toUpperCase() || 'UNKNOWN'}
+                                      </Badge>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Position:</span>
+                                        <div className="font-mono">#{position.id}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Lots:</span>
+                                        <div className="font-mono">{volume}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Open Price:</span>
+                                        <div className="font-mono">{formatPrice(position.openPrice)}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Current:</span>
+                                        <div className="font-mono">{currentPrice ? formatPrice(currentPrice) : '-'}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">S/L:</span>
+                                        <div className="font-mono">{position.stopLoss ? formatPrice(position.stopLoss) : '-'}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">T/P:</span>
+                                        <div className="font-mono">{position.takeProfit ? formatPrice(position.takeProfit) : '-'}</div>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between">
+                                      <div className={`font-mono text-lg font-semibold ${getPnLColor(pnl)}`}>
+                                        {formatPnL(pnl)}
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleEditPosition(position)}
+                                          className="h-8 w-8 p-0"
+                                          title="Edit Position"
+                                        >
+                                          <Edit2 className="h-4 w-4" />
+                                        </Button>
+                                        <AlertDialog>
+                                          <AlertDialogTrigger asChild>
+                                            <Button 
+                                              variant="ghost" 
+                                              size="sm" 
+                                              disabled={closingPositions.has(position.id)}
+                                              className="h-8 w-8 p-0"
+                                              title="Close Position"
+                                            >
+                                              {closingPositions.has(position.id) ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                              ) : (
+                                                <X className="h-4 w-4" />
+                                              )}
+                                            </Button>
+                                          </AlertDialogTrigger>
+                                          <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                              <AlertDialogTitle>Close Position</AlertDialogTitle>
+                                              <AlertDialogDescription>
+                                                Are you sure you want to close position #{position.id} for {position.symbol}?
+                                                <br />Current P&L: <span className={getPnLColor(pnl)}>{formatPnL(pnl)}</span>
+                                              </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                              <AlertDialogAction onClick={() => handleClosePosition(position.id)}>
+                                                Close Position
+                                              </AlertDialogAction>
+                                            </AlertDialogFooter>
+                                          </AlertDialogContent>
+                                        </AlertDialog>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </Card>
+                            )
+                          })}
+                        </div>
+
+                        {/* Desktop table: hidden on small screens */}
+                        <div className="hidden sm:block overflow-auto">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -559,6 +664,7 @@ export default function PositionsPage() {
                           </TableBody>
                         </Table>
                       </div>
+                      </>
                     )}
                   </TabsContent>
 
@@ -573,7 +679,65 @@ export default function PositionsPage() {
                         <p>No pending positions</p>
                       </div>
                     ) : (
-                      <div className="overflow-auto">
+                      <>
+                        {/* Mobile card list: visible on small screens */}
+                        <div className="sm:hidden p-2 space-y-3 max-h-[50vh] overflow-auto">
+                          {pendingPositions.map((position: Position) => {
+                            const pnl = position.profit || 0
+                            const volume = position.volume ?? position.lotSize ?? 0
+                            const openTime = position.openTime ?? position.openedAt
+                            return (
+                              <Card key={position.id} className="p-3">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="font-semibold">{position.symbol}</div>
+                                      <Badge variant="secondary" className="text-xs">
+                                        {position.status}
+                                      </Badge>
+                                      <Badge variant={position.side === 'buy' ? 'default' : 'destructive'} className="text-xs">
+                                        {position.side?.toUpperCase() || 'UNKNOWN'}
+                                      </Badge>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Position:</span>
+                                        <div className="font-mono">#{position.id}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Lots:</span>
+                                        <div className="font-mono">{volume}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Trigger Price:</span>
+                                        <div className="font-mono">{position.triggerPrice ? formatPrice(position.triggerPrice) : '-'}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Time:</span>
+                                        <div className="text-xs text-muted-foreground">
+                                          {openTime ? new Date(openTime).toLocaleTimeString() : '-'}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between">
+                                      <div className={`font-mono text-lg font-semibold ${getPnLColor(pnl)}`}>
+                                        {formatPnL(pnl)}
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <Button variant="ghost" size="sm" onClick={() => refetch()} className="h-8 w-8 p-0" title="Refresh">
+                                          <RefreshCw className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </Card>
+                            )
+                          })}
+                        </div>
+
+                        {/* Desktop table: hidden on small screens */}
+                        <div className="hidden sm:block overflow-auto">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -622,6 +786,7 @@ export default function PositionsPage() {
                           </TableBody>
                         </Table>
                       </div>
+                      </>
                     )}
                   </TabsContent>
 
@@ -636,7 +801,76 @@ export default function PositionsPage() {
                         <p>No trading history</p>
                       </div>
                     ) : (
-                      <div className="overflow-auto">
+                      <>
+                        {/* Mobile card list: visible on small screens */}
+                        <div className="sm:hidden p-2 space-y-3 max-h-[50vh] overflow-auto">
+                          {closedPositions.map((position: Position) => {
+                            const openTime = position.openTime || position.openedAt
+                            const closeTime = position.closeTime || position.closedAt
+                            const duration = closeTime && openTime
+                              ? new Date(closeTime).getTime() - new Date(openTime).getTime()
+                              : 0
+                            const durationText = duration > 0 
+                              ? `${Math.floor(duration / (1000 * 60))}m`
+                              : '-'
+                            const pnl = position.profit ?? 0
+                            const volume = position.volume ?? position.lotSize ?? 0
+                            const closePriceValue = position.closePrice ?? position.currentPrice ?? null
+                            return (
+                              <Card key={position.id} className="p-3">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="font-semibold">{position.symbol}</div>
+                                      <Badge variant="outline" className="text-xs">
+                                        {position.status}
+                                      </Badge>
+                                      <Badge variant={position.side === 'buy' ? 'default' : 'destructive'} className="text-xs">
+                                        {position.side?.toUpperCase() || 'UNKNOWN'}
+                                      </Badge>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Position:</span>
+                                        <div className="font-mono">#{position.id}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Lots:</span>
+                                        <div className="font-mono">{volume}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Open:</span>
+                                        <div className="font-mono">{formatPrice(position.openPrice)}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Close:</span>
+                                        <div className="font-mono">{closePriceValue ? formatPrice(closePriceValue) : '-'}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Duration:</span>
+                                        <div className="font-mono">{durationText}</div>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Time:</span>
+                                        <div className="text-xs text-muted-foreground">
+                                          {closeTime ? new Date(closeTime).toLocaleTimeString() : '-'}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2">
+                                      <div className={`font-mono text-lg font-semibold ${getPnLColor(pnl)}`}>
+                                        {formatPnL(pnl)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </Card>
+                            )
+                          })}
+                        </div>
+
+                        {/* Desktop table: hidden on small screens */}
+                        <div className="hidden sm:block overflow-auto">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -705,6 +939,7 @@ export default function PositionsPage() {
                           </TableBody>
                         </Table>
                       </div>
+                      </>
                     )}
                   </TabsContent>
                 </Tabs>

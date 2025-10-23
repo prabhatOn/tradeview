@@ -3,7 +3,6 @@
 import React, { useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   BarChart3,
   TrendingUp,
@@ -18,6 +17,13 @@ import {
 } from "lucide-react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 interface SidebarProps {
   className?: string
@@ -112,15 +118,21 @@ export function TradingSidebar({ className, collapsed = false, onCollapsedChange
 
   const pathname = usePathname() || "/"
 
+  // Mobile primary items: Dashboard, Positions, Funds (user requested)
+  const mobilePrimary = [sidebarItems[0], sidebarItems[1], sidebarItems[3]]
+  const mobileMore = sidebarItems.filter((it) => !mobilePrimary.includes(it))
+
   return (
-    <div
-      className={cn(
-        "flex flex-col border-r bg-card transition-all duration-300 fixed top-16 left-0 h-[calc(100vh-4rem)] z-40",
-        collapsed ? "w-16" : "w-64",
-        "border-border",
-        className,
-      )}
-    >
+    <>
+      <div
+        className={cn(
+          // hide on small screens, show from `sm` and up
+          "hidden sm:flex flex-col border-r bg-card transition-all duration-300 fixed top-16 left-0 h-[calc(100vh-4rem)] z-40",
+          collapsed ? "w-16" : "w-64",
+          "border-border",
+          className,
+        )}
+      >
       {/* Header */}
       <div className="flex h-16 items-center justify-between px-4 border-b border-border">
         {!collapsed && (
@@ -176,6 +188,48 @@ export function TradingSidebar({ className, collapsed = false, onCollapsedChange
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Mobile bottom navigation - visible only on small screens */}
+      <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-card/95 border-t sm:hidden">
+        <nav className="flex items-center justify-between h-16 px-1">
+          {mobilePrimary.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+            const Icon = item.icon
+            return (
+              <Link key={item.href} href={item.href} className={cn(
+                "flex-1 flex flex-col items-center justify-center py-1 text-xs",
+                isActive ? "text-primary" : "text-muted-foreground"
+              )}>
+                <Icon className="h-5 w-5" />
+                <span className="mt-1 text-[10px]">{item.title}</span>
+              </Link>
+            )
+          })}
+
+          {/* Profile / More menu */}
+          <div className="flex-1 flex items-center justify-center">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex flex-col items-center justify-center py-1 text-xs">
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage src="" alt="Menu" />
+                    <AvatarFallback>Me</AvatarFallback>
+                  </Avatar>
+                  <span className="mt-1 text-[10px]">More</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-48">
+                {mobileMore.map((it) => (
+                  <DropdownMenuItem asChild key={it.href}>
+                    <Link href={it.href}>{it.title}</Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </nav>
+      </div>
+    </>
   )
 }
