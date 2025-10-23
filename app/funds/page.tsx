@@ -250,8 +250,8 @@ export default function FundsPage() {
       try {
         const methodsResponse = await apiClient.get('/funds/methods')
         console.log('Methods Response:', methodsResponse)
-        if (methodsResponse.success) {
-          methodsData = methodsResponse.data
+        if (methodsResponse.success && methodsResponse.data?.methods && Array.isArray(methodsResponse.data.methods)) {
+          methodsData = methodsResponse.data.methods
           setFundingMethods(methodsData)
         }
       } catch (error: unknown) {
@@ -746,7 +746,7 @@ export default function FundsPage() {
                           <SelectValue placeholder="Select payment method" />
                         </SelectTrigger>
                         <SelectContent>
-                          {fundingMethods.map((method) => (
+                          {(Array.isArray(fundingMethods) ? fundingMethods : []).map((method) => (
                             <SelectItem key={method.type} value={method.type}>
                               <div className="flex items-center gap-2">
                                 <span>{method.name}</span>
@@ -833,7 +833,7 @@ export default function FundsPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {fundingMethods.map((method) => (
+                          {(Array.isArray(fundingMethods) ? fundingMethods : []).map((method) => (
                             <SelectItem key={method.type} value={method.type}>
                               {method.name}
                             </SelectItem>

@@ -7,6 +7,44 @@ const { asyncHandler } = require('../middleware/async-handler');
 const { authMiddleware } = require('../middleware/auth');
 const AppError = require('../utils/app-error');
 const Joi = require('joi');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '../uploads/kyc');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `kyc-${req.user.id}-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|pdf/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+
+  if (mimetype && extname) {
+    return cb(null, true);
+  } else {
+    cb(new Error('Only image files (JPEG, PNG) and PDF files are allowed!'));
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: fileFilter
+});
 
 // Apply authentication to all routes
 router.use(authMiddleware);
@@ -14,9 +52,7 @@ router.use(authMiddleware);
 // Validation schemas
 const kycDocumentSchema = Joi.object({
   documentType: Joi.string().valid('aadhar', 'pancard', 'passport', 'driving_license', 'voter_id').required(),
-  documentNumber: Joi.string().required().max(50),
-  documentFrontUrl: Joi.string().uri().required().max(500),
-  documentBackUrl: Joi.string().uri().allow('', null).max(500)
+  documentNumber: Joi.string().required().max(50)
 });
 
 const kycPersonalInfoSchema = Joi.object({
@@ -56,9 +92,16 @@ router.get('/documents', asyncHandler(async (req, res) => {
     ORDER BY created_at DESC
   `, [req.user.id]);
 
+  // Convert file paths to URLs
+  const documentsWithUrls = documents.map(doc => ({
+    ...doc,
+    documentFrontUrl: doc.documentFrontUrl ? `/uploads/kyc/${path.basename(doc.documentFrontUrl)}` : null,
+    documentBackUrl: doc.documentBackUrl ? `/uploads/kyc/${path.basename(doc.documentBackUrl)}` : null
+  }));
+
   res.json({
     success: true,
-    data: documents
+    data: documentsWithUrls
   });
 }));
 
@@ -66,13 +109,21 @@ router.get('/documents', asyncHandler(async (req, res) => {
  * POST /api/kyc/documents
  * Upload a new KYC document
  */
-router.post('/documents', asyncHandler(async (req, res) => {
+router.post('/documents', upload.fields([
+  { name: 'documentFront', maxCount: 1 },
+  { name: 'documentBack', maxCount: 1 }
+]), asyncHandler(async (req, res) => {
   const { error, value } = kycDocumentSchema.validate(req.body);
   if (error) {
     throw new AppError(error.details[0].message, 400);
   }
 
-  const { documentType, documentNumber, documentFrontUrl, documentBackUrl } = value;
+  const { documentType, documentNumber } = value;
+
+  // Check if files were uploaded
+  if (!req.files || !req.files.documentFront || req.files.documentFront.length === 0) {
+    throw new AppError('Document front image is required', 400);
+  }
 
   // Check if document type already exists
   const [existing] = await executeQuery(`
@@ -84,16 +135,21 @@ router.post('/documents', asyncHandler(async (req, res) => {
     throw new AppError(`${documentType} document already uploaded`, 400);
   }
 
+  const documentFrontPath = req.files.documentFront[0].path;
+  const documentBackPath = req.files.documentBack && req.files.documentBack.length > 0
+    ? req.files.documentBack[0].path
+    : null;
+
   const result = await executeQuery(`
     INSERT INTO kyc_documents (
-      user_id, document_type, document_number, 
+      user_id, document_type, document_number,
       document_front_url, document_back_url, status, submitted_at
     ) VALUES (?, ?, ?, ?, ?, 'submitted', NOW())
-  `, [req.user.id, documentType, documentNumber, documentFrontUrl, documentBackUrl || null]);
+  `, [req.user.id, documentType, documentNumber, documentFrontPath, documentBackPath]);
 
   // Update user KYC status
   await executeQuery(`
-    UPDATE users 
+    UPDATE users
     SET kyc_status = 'submitted', kyc_submitted_at = NOW()
     WHERE id = ?
   `, [req.user.id]);

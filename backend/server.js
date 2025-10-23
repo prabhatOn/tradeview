@@ -18,6 +18,7 @@ const rateLimit = require('express-rate-limit');
 const http = require('http');
 const WebSocket = require('ws');
 const cron = require('node-cron');
+const path = require('path');
 
 // Import configurations and middleware
 const database = require('./config/database');
@@ -107,6 +108,9 @@ app.use(compression());
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Health check endpoint
 app.get('/health', (req, res) => {

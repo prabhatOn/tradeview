@@ -47,8 +47,8 @@ export function KycDocuments() {
   const [newDocument, setNewDocument] = useState({
     documentType: 'aadhar',
     documentNumber: '',
-    documentFrontUrl: '',
-    documentBackUrl: ''
+    documentFrontFile: null as File | null,
+    documentBackFile: null as File | null
   })
 
   useEffect(() => {
@@ -85,10 +85,10 @@ export function KycDocuments() {
   }
 
   const handleUpload = async () => {
-    if (!newDocument.documentNumber || !newDocument.documentFrontUrl) {
+    if (!newDocument.documentNumber || !newDocument.documentFrontFile) {
       toast({
         title: "Validation Error",
-        description: "Please fill all required fields",
+        description: "Please fill all required fields and select front document image",
         variant: "destructive"
       })
       return
@@ -96,8 +96,25 @@ export function KycDocuments() {
 
     setUploading(true)
     try {
-      const response = await apiClient.post('/kyc/documents', newDocument)
-      if (response.success) {
+      // Use fetch directly for file upload since apiClient expects JSON
+      const formData = new FormData()
+      formData.append('documentType', newDocument.documentType)
+      formData.append('documentNumber', newDocument.documentNumber)
+      formData.append('documentFront', newDocument.documentFrontFile!)
+      if (newDocument.documentBackFile) {
+        formData.append('documentBack', newDocument.documentBackFile)
+      }
+
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('http://localhost:3001/api/kyc/documents', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
         toast({
           title: "Success",
           description: "KYC document uploaded successfully"
@@ -105,11 +122,13 @@ export function KycDocuments() {
         setNewDocument({
           documentType: 'aadhar',
           documentNumber: '',
-          documentFrontUrl: '',
-          documentBackUrl: ''
+          documentFrontFile: null,
+          documentBackFile: null
         })
         fetchDocuments()
         fetchKycStatus()
+      } else {
+        throw new Error(result.message || 'Upload failed')
       }
     } catch (error: any) {
       toast({
@@ -225,24 +244,45 @@ export function KycDocuments() {
           </div>
 
           <div className="grid gap-2">
-            <Label>Document Front Image URL</Label>
+            <Label>Document Front Image</Label>
             <Input
-              placeholder="https://example.com/front.jpg"
-              value={newDocument.documentFrontUrl}
-              onChange={(e) => setNewDocument({ ...newDocument, documentFrontUrl: e.target.value })}
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null
+                setNewDocument({ ...newDocument, documentFrontFile: file })
+              }}
+              className="cursor-pointer"
             />
             <p className="text-xs text-muted-foreground">
-              Upload your image to a service like Imgur or Cloudinary and paste the URL here
+              Upload the front side of your document (JPG, PNG, PDF)
             </p>
+            {newDocument.documentFrontFile && (
+              <p className="text-xs text-green-600">
+                Selected: {newDocument.documentFrontFile.name}
+              </p>
+            )}
           </div>
 
           <div className="grid gap-2">
-            <Label>Document Back Image URL (Optional)</Label>
+            <Label>Document Back Image (Optional)</Label>
             <Input
-              placeholder="https://example.com/back.jpg"
-              value={newDocument.documentBackUrl}
-              onChange={(e) => setNewDocument({ ...newDocument, documentBackUrl: e.target.value })}
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null
+                setNewDocument({ ...newDocument, documentBackFile: file })
+              }}
+              className="cursor-pointer"
             />
+            <p className="text-xs text-muted-foreground">
+              Upload the back side of your document (if applicable)
+            </p>
+            {newDocument.documentBackFile && (
+              <p className="text-xs text-green-600">
+                Selected: {newDocument.documentBackFile.name}
+              </p>
+            )}
           </div>
 
           <Button onClick={handleUpload} disabled={uploading} className="w-full">
