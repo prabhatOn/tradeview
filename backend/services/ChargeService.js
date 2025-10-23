@@ -236,10 +236,52 @@ class ChargeService {
 
   static async listSymbolCharges() {
     const symbols = await executeQuery(`
-      SELECT id, symbol, name, commission_value, swap_long, swap_short, spread_markup,
-             contract_size, pip_size, margin_requirement, is_active
-      FROM symbols
-      ORDER BY symbol ASC
+      SELECT
+        s.id,
+        s.symbol,
+        s.name,
+        s.contract_size,
+        s.pip_size,
+        s.margin_requirement,
+        s.is_active,
+        -- Get commission from trading_charges or fallback to symbols table
+        COALESCE(
+          (SELECT tc.charge_value FROM trading_charges tc
+           WHERE tc.symbol_id = s.id AND tc.charge_type = 'commission'
+           AND tc.account_type = 'live' AND tc.tier_level = 'standard'
+           AND tc.is_active = 1 LIMIT 1),
+          s.commission_value,
+          0
+        ) as commission_value,
+        -- Get swap_long from trading_charges or fallback to symbols table
+        COALESCE(
+          (SELECT tc.charge_value FROM trading_charges tc
+           WHERE tc.symbol_id = s.id AND tc.charge_type = 'swap_long'
+           AND tc.account_type = 'live' AND tc.tier_level = 'standard'
+           AND tc.is_active = 1 LIMIT 1),
+          s.swap_long,
+          0
+        ) as swap_long,
+        -- Get swap_short from trading_charges or fallback to symbols table
+        COALESCE(
+          (SELECT tc.charge_value FROM trading_charges tc
+           WHERE tc.symbol_id = s.id AND tc.charge_type = 'swap_short'
+           AND tc.account_type = 'live' AND tc.tier_level = 'standard'
+           AND tc.is_active = 1 LIMIT 1),
+          s.swap_short,
+          0
+        ) as swap_short,
+        -- Get spread_markup from trading_charges or fallback to symbols table
+        COALESCE(
+          (SELECT tc.charge_value FROM trading_charges tc
+           WHERE tc.symbol_id = s.id AND tc.charge_type = 'spread_markup'
+           AND tc.account_type = 'live' AND tc.tier_level = 'standard'
+           AND tc.is_active = 1 LIMIT 1),
+          s.spread_markup,
+          0
+        ) as spread_markup
+      FROM symbols s
+      ORDER BY s.symbol ASC
     `);
 
     return symbols.map((row) => ({
@@ -258,44 +300,66 @@ class ChargeService {
   }
 
   static async updateSymbolCharges(symbolId, { commissionPerLot, swapLong, swapShort, spreadMarkup, marginRequirement, status }) {
-    const updates = [];
-    const params = [];
+    // Update symbols table for basic properties
+    const symbolUpdates = [];
+    const symbolParams = [];
 
-    if (commissionPerLot !== undefined) {
-      updates.push('commission_value = ?');
-      params.push(parseNumeric(commissionPerLot, 0));
-    }
-    if (swapLong !== undefined) {
-      updates.push('swap_long = ?');
-      params.push(parseNumeric(swapLong, 0));
-    }
-    if (swapShort !== undefined) {
-      updates.push('swap_short = ?');
-      params.push(parseNumeric(swapShort, 0));
-    }
-    if (spreadMarkup !== undefined) {
-      updates.push('spread_markup = ?');
-      params.push(parseNumeric(spreadMarkup, 0));
-    }
     if (marginRequirement !== undefined) {
-      updates.push('margin_requirement = ?');
-      params.push(parseNumeric(marginRequirement, 1));
+      symbolUpdates.push('margin_requirement = ?');
+      symbolParams.push(parseNumeric(marginRequirement, 1));
     }
     if (status !== undefined) {
-      updates.push('is_active = ?');
-      params.push(status === 'active' ? 1 : 0);
+      symbolUpdates.push('is_active = ?');
+      symbolParams.push(status === 'active' ? 1 : 0);
     }
 
-    if (!updates.length) {
-      return { updated: false };
+    if (symbolUpdates.length) {
+      symbolParams.push(symbolId);
+      await executeQuery(
+        `UPDATE symbols SET ${symbolUpdates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        symbolParams
+      );
     }
 
-    params.push(symbolId);
+    // Update trading_charges table for charge values
+    const chargeTypes = [];
+    if (commissionPerLot !== undefined) {
+      chargeTypes.push({ type: 'commission', value: parseNumeric(commissionPerLot, 0) });
+    }
+    if (swapLong !== undefined) {
+      chargeTypes.push({ type: 'swap_long', value: parseNumeric(swapLong, 0) });
+    }
+    if (swapShort !== undefined) {
+      chargeTypes.push({ type: 'swap_short', value: parseNumeric(swapShort, 0) });
+    }
+    if (spreadMarkup !== undefined) {
+      chargeTypes.push({ type: 'spread_markup', value: parseNumeric(spreadMarkup, 0) });
+    }
 
-    await executeQuery(
-      `UPDATE symbols SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      params
-    );
+    for (const charge of chargeTypes) {
+      // Check if charge exists
+      const [existing] = await executeQuery(
+        `SELECT id FROM trading_charges
+         WHERE symbol_id = ? AND charge_type = ? AND account_type = 'live' AND tier_level = 'standard'`,
+        [symbolId, charge.type]
+      );
+
+      if (existing.length) {
+        // Update existing charge
+        await executeQuery(
+          `UPDATE trading_charges SET charge_value = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE symbol_id = ? AND charge_type = ? AND account_type = 'live' AND tier_level = 'standard'`,
+          [charge.value, symbolId, charge.type]
+        );
+      } else {
+        // Insert new charge
+        await executeQuery(
+          `INSERT INTO trading_charges (symbol_id, account_type, charge_type, charge_value, charge_unit, tier_level, is_active)
+           VALUES (?, 'live', ?, ?, 'per_lot', 'standard', 1)`,
+          [symbolId, charge.type, charge.value]
+        );
+      }
+    }
 
     return { updated: true };
   }

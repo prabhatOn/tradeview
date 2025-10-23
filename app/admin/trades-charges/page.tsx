@@ -17,7 +17,6 @@ import {
   Users,
   TrendingUp,
   Search,
-  Plus,
   Edit,
   Save,
   DollarSign,
@@ -31,6 +30,7 @@ import {
   CheckCircle
 } from "lucide-react"
 import { useToast } from '@/hooks/use-toast'
+import { useDebounce } from '@/hooks/use-debounce'
 import { adminService } from '@/lib/services'
 import {
   AdminSymbolChargeRow,
@@ -135,6 +135,8 @@ function TradesChargesContent() {
   const [editingUserLeverageValue, setEditingUserLeverageValue] = useState<string>("100")
   const [updatingUserLeverageId, setUpdatingUserLeverageId] = useState<number | null>(null)
   const [userLeverageError, setUserLeverageError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState<string>("")
+  const debouncedSearchTerm = useDebounce(searchTerm, 300)
 
   const loadData = useCallback(async (mode: LoadMode = "initial") => {
     if (mode === "initial") {
@@ -297,8 +299,20 @@ function TradesChargesContent() {
     }
   }
 
+  const filteredSymbols = useMemo(() => {
+    if (!debouncedSearchTerm.trim()) {
+      return symbols
+    }
+    const query = debouncedSearchTerm.trim().toLowerCase()
+    return symbols.filter((symbol) =>
+      symbol.symbol.toLowerCase().includes(query) ||
+      symbol.name.toLowerCase().includes(query)
+    )
+  }, [symbols, debouncedSearchTerm])
+
   const stats = useMemo(() => {
-    if (!symbols.length) {
+    const symbolsToUse = filteredSymbols.length > 0 ? filteredSymbols : symbols
+    if (!symbolsToUse.length) {
       return {
         total: 0,
         active: 0,
@@ -308,10 +322,10 @@ function TradesChargesContent() {
       }
     }
 
-    const total = symbols.length
-    const active = symbols.filter((symbol) => (symbol.status || "").toLowerCase() === "active").length
-    const commissionSum = symbols.reduce((acc, symbol) => acc + toNumber(symbol.commissionPerLot), 0)
-    const spreadSum = symbols.reduce((acc, symbol) => acc + toNumber(symbol.spreadMarkup), 0)
+    const total = symbolsToUse.length
+    const active = symbolsToUse.filter((symbol) => (symbol.status || "").toLowerCase() === "active").length
+    const commissionSum = symbolsToUse.reduce((acc, symbol) => acc + toNumber(symbol.commissionPerLot), 0)
+    const spreadSum = symbolsToUse.reduce((acc, symbol) => acc + toNumber(symbol.spreadMarkup), 0)
 
     return {
       total,
@@ -320,7 +334,7 @@ function TradesChargesContent() {
       avgCommission: total ? commissionSum / total : 0,
       avgSpread: total ? spreadSum / total : 0
     }
-  }, [symbols])
+  }, [symbols, filteredSymbols])
 
   const handleRefresh = async () => {
     await loadData("refresh")
@@ -644,13 +658,10 @@ function TradesChargesContent() {
                               <Input
                                   placeholder="Search symbols..."
                                   className="pl-10 w-full sm:w-64 md:w-64 lg:w-64 bg-background/60 backdrop-blur-sm border-border/20"
-                                  disabled
+                                  value={searchTerm}
+                                  onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
-                            <Button variant="outline" size="sm" className="w-10 sm:w-auto h-8 flex items-center justify-center" disabled>
-                              <Plus className="h-4 w-4" />
-                              <span className="hidden sm:inline ml-2">Add Symbol</span>
-                            </Button>
                           </div>
                         </div>
                       </div>
@@ -670,14 +681,14 @@ function TradesChargesContent() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {symbols.length === 0 ? (
+                          {filteredSymbols.length === 0 ? (
                             <TableRow>
                               <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                                No symbols configured yet.
+                                {debouncedSearchTerm.trim() ? "No symbols found matching your search." : "No symbols configured yet."}
                               </TableCell>
                             </TableRow>
                           ) : (
-                            symbols.map((symbol) => {
+                            filteredSymbols.map((symbol) => {
                               const isEditing = editingSymbolId === symbol.id
                               const isBusy = updatingSymbolId === symbol.id
 

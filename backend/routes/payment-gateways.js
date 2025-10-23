@@ -169,12 +169,7 @@ router.get('/banks', asyncHandler(async (req, res) => {
 // Admin: Get all payment gateways with full details
 router.get('/admin', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const gateways = await executeQuery(`
-    SELECT 
-      *,
-      (SELECT COUNT(*) FROM deposits WHERE payment_gateway_id = pg.id) as total_deposits,
-      (SELECT COUNT(*) FROM withdrawals WHERE payment_gateway_id = pg.id) as total_withdrawals,
-      (SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE payment_gateway_id = pg.id AND status = 'completed') as total_deposit_volume,
-      (SELECT COALESCE(SUM(amount), 0) FROM withdrawals WHERE payment_gateway_id = pg.id AND status = 'completed') as total_withdrawal_volume
+    SELECT *
     FROM payment_gateways pg
     ORDER BY sort_order ASC, display_name ASC
   `);

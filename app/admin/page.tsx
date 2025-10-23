@@ -382,11 +382,6 @@ export default function AdminDashboard() {
               <p className="text-muted-foreground mt-2">
                 Monitor and manage your trading platform performance
               </p>
-              {systemHealth?.activeUsers && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {numberFormatter.format(systemHealth.activeUsers)} active users • {numberFormatter.format(systemHealth.activeAccounts)} trading accounts
-                </p>
-              )}
             </div>
             <div className="flex items-center space-x-3 flex-wrap">
               {healthUpdatedLabel && (

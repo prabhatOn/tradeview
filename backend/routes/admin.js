@@ -185,9 +185,9 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
 
     // Support ticket statistics
     executeQuery(`
-      SELECT 
+      SELECT
         COUNT(*) as total_tickets,
-        COUNT(CASE WHEN status IN ('open', 'in_progress', 'waiting_user', 'pending') THEN 1 END) as open_tickets,
+        COUNT(CASE WHEN status IN ('open', 'in_progress', 'waiting_user') THEN 1 END) as open_tickets,
         COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_tickets,
         COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 END) as new_tickets_7d
       FROM support_tickets
