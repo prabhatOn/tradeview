@@ -41,7 +41,7 @@ export function Navbar() {
 
   if (!isAuthenticated) {
     return (
-      <nav className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
+      <nav className="sticky top-0 z-50 border-b bg-black">
         <div className="container mx-auto px-4">
           <div className="flex h-16 items-center justify-between">
             <Link href="/" className="flex items-center space-x-2">
@@ -64,15 +64,15 @@ export function Navbar() {
   }
 
   return (
-    <nav className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
-      <div className="container mx-auto px-4">
+    <nav className="sticky top-0 z-500 border-b bg-black shadow-sm">
+      <div className="px-5 w-full">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
             <TrendingUp className="h-8 w-8 text-primary" />
             <span className="text-xl font-bold">TradePro</span>
           </Link>
           
-          <div className="flex items-center gap-3 md:gap-6">
+          <div className="flex items-end justify-end gap-3 md:gap-6">
             <div className="hidden sm:flex flex-col items-end justify-center min-w-[120px]">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Account</p>
               <p className="font-mono text-sm font-medium whitespace-nowrap">

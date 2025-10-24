@@ -5,40 +5,15 @@ import { useSidebarCollapsed } from '@/hooks/use-sidebar-collapsed'
 import { useTrading } from '@/contexts/TradingContext'
 import { usePositions } from '@/hooks/use-trading'
 import { TradingSidebar } from "@/components/trading-sidebar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import {
-  BarChart3,
-  TrendingUp,
-  DollarSign,
-  Target,
-  Clock,
-  Loader2,
-  RefreshCw,
-  Search,
-  
-} from "lucide-react"
+import { Clock, Loader2, RefreshCw } from "lucide-react"
 import { Position } from "@/lib/types"
 import { normalizePositions, formatPrice, formatPnL, getPnLColor } from "@/lib/utils-trading"
 
-interface PositionStats {
-  totalPositions: number;
-  openPositions: number;
-  closedPositions: number;
-  totalPnL: number;
-  totalProfit: number;
-  totalLoss: number;
-  winRate: number;
-  avgWin: number;
-  avgLoss: number;
-  profitFactor: number;
-  currentExposure: number;
-  unrealizedPnL: number;
-}
 
 export default function HistoryPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(false)
@@ -51,8 +26,11 @@ export default function HistoryPage() {
   const [lastUpdate, setLastUpdate] = useState<string>('')
 
   // Filter states
-  const [searchTerm, setSearchTerm] = useState('')
   const [sideFilter, setSideFilter] = useState('all')
+  // date range filter: ISO date strings (yyyy-mm-dd)
+  const [preset, setPreset] = useState<string | null>(null)
+  const [fromDate, setFromDate] = useState<string | null>(null)
+  const [toDate, setToDate] = useState<string | null>(null)
 
   // Process positions data - only closed positions for history
   const rawPositions = Array.isArray(positionsData) ? positionsData as unknown[] : ((positionsData as unknown as { data?: unknown[] })?.data || [])
@@ -60,46 +38,65 @@ export default function HistoryPage() {
   const positions = normalizePositions(typedRawPositions)
   const closedPositions = positions.filter((p: Position) => p.status === 'closed')
 
-  // Filter positions
-  const filteredPositions = closedPositions.filter((position: Position) => {
-    const matchesSearch = !searchTerm ||
-      position.symbol?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      position.id.toString().includes(searchTerm)
-    const matchesSide = sideFilter === 'all' || position.side === sideFilter
-
-    return matchesSearch && matchesSide
-  })
-
-  // Calculate statistics
-  const calculateStats = (positions: Position[]): PositionStats => {
-    const allPos = positions
-    const closedPos = allPos.filter(p => p.status === 'closed')
-    const winningTrades = closedPos.filter(p => (p.profit || 0) > 0)
-    const losingTrades = closedPos.filter(p => (p.profit || 0) <= 0)
-
-    const totalPnL = allPos.reduce((sum, p) => sum + (p.profit || 0), 0)
-    const totalProfit = winningTrades.reduce((sum, p) => sum + (p.profit || 0), 0)
-    const totalLoss = Math.abs(losingTrades.reduce((sum, p) => sum + (p.profit || 0), 0))
-    const currentExposure = 0 // No exposure for closed positions
-    const unrealizedPnL = 0 // No unrealized P&L for closed positions
-
-    return {
-      totalPositions: allPos.length,
-      openPositions: 0, // No open positions in history
-      closedPositions: closedPos.length,
-      totalPnL,
-      totalProfit,
-      totalLoss,
-      winRate: closedPos.length > 0 ? (winningTrades.length / closedPos.length) * 100 : 0,
-      avgWin: winningTrades.length > 0 ? totalProfit / winningTrades.length : 0,
-      avgLoss: losingTrades.length > 0 ? totalLoss / losingTrades.length : 0,
-      profitFactor: totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? Infinity : 0,
-      currentExposure,
-      unrealizedPnL
-    }
+  // Helper to parse position close time
+  const getPositionCloseTime = (position: Position) => {
+    return new Date(position.closeTime || position.closedAt || 0)
   }
 
-  const stats = calculateStats(positions)
+  // date preset helpers
+  const applyPresetDays = (days: number) => {
+    setPreset(`${days}`)
+    const now = new Date()
+    const to = new Date(now)
+    const from = new Date(now)
+    from.setDate(now.getDate() - (days - 1)) // include today as last day
+    // store as yyyy-mm-dd
+    const toIso = to.toISOString().slice(0, 10)
+    const fromIso = from.toISOString().slice(0, 10)
+    setFromDate(fromIso)
+    setToDate(toIso)
+  }
+
+  const applyCustomRange = () => {
+    // custom range already stored in fromDate/toDate inputs
+    setPreset(null)
+  }
+
+  // Filter positions by side and selected date range (if any)
+  const filteredPositions = closedPositions.filter((position: Position) => {
+    const matchesSide = sideFilter === 'all' || position.side === sideFilter
+
+    // If no date filter set, include all
+    if (!fromDate && !toDate) return matchesSide
+
+    const closeTime = getPositionCloseTime(position)
+    if (isNaN(closeTime.getTime())) return false
+
+    // compare using start of day for fromDate and end of day for toDate
+    const parseIsoToLocalStart = (iso: string) => {
+      const parts = iso.split('-').map(Number)
+      if (parts.length !== 3) return null
+      const [y, m, d] = parts
+      return new Date(y, m - 1, d, 0, 0, 0, 0)
+    }
+    const parseIsoToLocalEnd = (iso: string) => {
+      const parts = iso.split('-').map(Number)
+      if (parts.length !== 3) return null
+      const [y, m, d] = parts
+      return new Date(y, m - 1, d, 23, 59, 59, 999)
+    }
+
+    const from = fromDate ? parseIsoToLocalStart(fromDate) : null
+    const to = toDate ? parseIsoToLocalEnd(toDate) : null
+
+    if (from && to) return matchesSide && closeTime >= from && closeTime <= to
+    if (from) return matchesSide && closeTime >= from
+    if (to) return matchesSide && closeTime <= to
+
+    return matchesSide
+  })
+
+  // statistics removed — not shown on this page anymore
 
   // Handle real-time updates
   useEffect(() => {
@@ -142,90 +139,49 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          {/* Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Trades</CardTitle>
-                <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.totalPositions}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stats.closedPositions} closed trades
-                </p>
-              </CardContent>
-            </Card>
+          {/* Statistics removed - replaced by date-range filter below */}
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-                <Target className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.winRate.toFixed(1)}%</div>
-                <p className="text-xs text-muted-foreground">
-                  Success rate from closed trades
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total P&L</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${getPnLColor(stats.totalPnL)}`}>
-                  {formatPnL(stats.totalPnL)}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  All-time profit/loss
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Best Trade</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${getPnLColor(stats.avgWin)}`}>
-                  {formatPnL(stats.avgWin)}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Average winning trade
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Filters and Search */}
+          {/* Date filter (presets + custom range) */}
           <Card>
             <CardContent className="pt-6">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search trading history..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
+              <div className="flex flex-col sm:flex-row gap-4 items-center">
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant={preset === '1' ? 'default' : 'ghost'} onClick={() => applyPresetDays(1)}>1 day</Button>
+                  <Button size="sm" variant={preset === '7' ? 'default' : 'ghost'} onClick={() => applyPresetDays(7)}>7 days</Button>
+                  <Button size="sm" variant={preset === '15' ? 'default' : 'ghost'} onClick={() => applyPresetDays(15)}>15 days</Button>
                 </div>
-                <Select value={sideFilter} onValueChange={setSideFilter}>
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue placeholder="Side" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sides</SelectItem>
-                    <SelectItem value="buy">Buy</SelectItem>
-                    <SelectItem value="sell">Sell</SelectItem>
-                  </SelectContent>
-                </Select>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={fromDate ?? ''}
+                    onChange={(e) => setFromDate(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') applyCustomRange() }}
+                    className="rounded border px-2 py-1 text-sm"
+                  />
+                  <span className="text-sm">to</span>
+                  <input
+                    type="date"
+                    value={toDate ?? ''}
+                    onChange={(e) => setToDate(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') applyCustomRange() }}
+                    className="rounded border px-2 py-1 text-sm"
+                  />
+                  <Button size="sm" onClick={applyCustomRange}>Apply</Button>
+                </div>
+
+                <div>
+                  <Select value={sideFilter} onValueChange={setSideFilter}>
+                    <SelectTrigger className="w-[120px]">
+                      <SelectValue placeholder="Side" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Sides</SelectItem>
+                      <SelectItem value="buy">Buy</SelectItem>
+                      <SelectItem value="sell">Sell</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>

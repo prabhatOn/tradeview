@@ -14,7 +14,7 @@ import { ChevronLeft } from "lucide-react"
 
 export default function TradingDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(false)
-  const [isWishlistOpen, setIsWishlistOpen] = useState(false)
+  const [isWishlistOpen, setIsWishlistOpen] = useState(true)
 
   return (
     <ProtectedRoute>
@@ -28,8 +28,8 @@ export default function TradingDashboard() {
 
           {/* Main Content */}
           <main
-            className={`flex-1 flex flex-col gap-4 overflow-auto transition-all duration-300 w-full ${
-              sidebarCollapsed ? "sm:pl-20 pl-0 pr-4 pt-4 pb-44 sm:pb-28" : "sm:pl-68 pl-0 pr-4 pt-4 pb-44 sm:pb-28"
+            className={`flex-1 flex flex-col overflow-auto transition-all duration-300 w-full ${
+              sidebarCollapsed ? "sm:pl-20 pl-0 pr-4 pt-4 pb-10 sm:pb-28" : "sm:pl-68 pl-0 pr-4 pt-4 pb-10 sm:pb-28"
             }`}
           >
             {/* Notifications Section removed per request */}
@@ -37,17 +37,17 @@ export default function TradingDashboard() {
             {/* Quick shortcuts removed from main - moved to mobile bottom nav per user request */}
 
             {/* Chart Section - expands to available space */}
-            <section className="flex-1 min-h-[70vh] sm:min-h-[75vh] md:min-h-[80vh] lg:min-h-[85vh] relative">
+        <section className=" h-[70vh] sm:min-h-[75vh] md:min-h-[50vh] lg:min-h-[70vh] relative">
               {/* On small screens stack vertically: chart -> wishlist -> positions
                   On larger screens show chart + wishlist docked as sibling columns. */}
               <div className="h-full w-full flex flex-col lg:flex-row">
                 {/* Chart column */}
-                <div className={`transition-all duration-300 relative ${isWishlistOpen ? 'lg:w-3/4 lg:h-full h-2/3' : 'w-full h-full'}`}>
+                <div className={`transition-all duration-300 relative ${isWishlistOpen ? 'lg:w-3/4 lg:h-full h-full' : 'w-full h-full'}`}>
                   {/* Mobile wishlist toggle button */}
                   <div className="lg:hidden absolute top-2 right-2 z-50">
                     <button
                       type="button"
-                      aria-label="Toggle wishlist"
+                      aria-label="Toggle watchlist"
                       onClick={() => setIsWishlistOpen(!isWishlistOpen)}
                       className="h-8 w-8 rounded bg-card/80 backdrop-blur shadow-md hover:bg-card/90 transition-all flex items-center justify-center"
                     >
@@ -58,18 +58,18 @@ export default function TradingDashboard() {
                 </div>
 
                 {/* Dedicated tab column (independent space) - only on lg and up */}
-                <div className="hidden lg:flex w-16 items-center justify-center">
+                  <div className="hidden lg:flex w-16 items-center justify-center">
                   {!isWishlistOpen && (
                     <button
                       type="button"
-                      aria-label="Open wishlist"
+                      aria-label="Open watchlist"
                       onClick={() => setIsWishlistOpen(true)}
                       className="h-32 w-full flex items-center justify-center bg-card/80 backdrop-blur shadow-md hover:bg-card/90 transition-all rounded-l px-1"
                     >
                       <div className="flex flex-col items-center gap-2">
                         <ChevronLeft className="w-5 h-5 text-foreground" />
                         <span className="text-xs text-foreground/90 tracking-wider" style={{writingMode: 'vertical-rl', transform: 'rotate(180deg)'}}>
-                          Wishlist
+                          Watchlist
                         </span>
                       </div>
                     </button>
@@ -77,7 +77,7 @@ export default function TradingDashboard() {
                 </div>
 
                 {/* Wishlist column - inline on mobile and lg, overlay on md */}
-                <div className={`transition-all duration-300 ${isWishlistOpen ? 'lg:w-1/4 lg:h-full h-56' : 'w-0 h-0 overflow-hidden'}`}>
+                  <div className={`transition-all duration-300 ${isWishlistOpen ? 'lg:w-1/4' : 'w-0 overflow-hidden'}`} style={isWishlistOpen ? { height: '100%' } : undefined}>
                   <WishlistPanel isOpen={isWishlistOpen} onClose={() => setIsWishlistOpen(false)} inline={true} />
                 </div>
               </div>

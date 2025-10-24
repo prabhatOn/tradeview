@@ -30,7 +30,8 @@ export default function TradingChart() {
   // Order UI removed — no on-chart buy/sell in this version
 
   return (
-    <div className="h-full">
+    // reduce chart height by 20% (use inline style to avoid depending on Tailwind config)
+    <div className="w-full" style={{ height: '80%' }}>
         {!selectedSymbol ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
             <div className="text-center">
@@ -46,9 +47,9 @@ export default function TradingChart() {
             </div>
           </div>
         ) : (
-          <div className="h-full w-full">
-              <div className="h-full"><TradingViewChart symbol={selectedSymbol || 'EURUSD'} timeframe={timeframe} onBuy={()=>{}} onSell={()=>{}} onChangeTimeframe={setTimeframe} /></div>
-          </div>
+      <div className="w-full" style={{ height: '100%' }}>
+        <div style={{ height: '100%' }}><TradingViewChart symbol={selectedSymbol || 'EURUSD'} timeframe={timeframe} onBuy={()=>{}} onSell={()=>{}} onChangeTimeframe={setTimeframe} /></div>
+      </div>
         )}
       <Toaster />
     </div>

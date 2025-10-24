@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast"
 import { TradingSidebar } from "@/components/trading-sidebar"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 // Trade dialog not used on this page
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -36,10 +36,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { 
-  BarChart3, 
-  TrendingUp, 
-  DollarSign, 
-  Target, 
   Clock,
   X,
   Edit,
@@ -51,21 +47,9 @@ import {
 import { Position } from "@/lib/types"
 import { normalizePositions, formatPrice, formatPnL, getPnLColor } from "@/lib/utils-trading"
 import { enhancedTradingService } from '@/lib/services'
+import PositionBottomBar from '@/components/position-bottom-bar'
 
-interface PositionStats {
-  totalPositions: number;
-  openPositions: number;
-  closedPositions: number;
-  totalPnL: number;
-  totalProfit: number;
-  totalLoss: number;
-  winRate: number;
-  avgWin: number;
-  avgLoss: number;
-  profitFactor: number;
-  currentExposure: number;
-  unrealizedPnL: number;
-}
+// PositionStats interface removed - stats are rendered by PositionStatsBar component
 
 export default function PositionsPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(false)
@@ -109,37 +93,7 @@ export default function PositionsPage() {
   const pendingPositions = filteredPositions.filter((p: Position) => p.status === 'pending')
   const closedPositions = filteredPositions.filter((p: Position) => p.status === 'closed')
 
-  // Calculate statistics
-  const calculateStats = (positions: Position[]): PositionStats => {
-    const allPos = positions
-    const openPos = allPos.filter(p => p.status === 'open')
-    const closedPos = allPos.filter(p => p.status === 'closed')
-    const winningTrades = closedPos.filter(p => (p.profit || 0) > 0)
-    const losingTrades = closedPos.filter(p => (p.profit || 0) <= 0)
-    
-    const totalPnL = allPos.reduce((sum, p) => sum + (p.profit || 0), 0)
-    const totalProfit = winningTrades.reduce((sum, p) => sum + (p.profit || 0), 0)
-    const totalLoss = Math.abs(losingTrades.reduce((sum, p) => sum + (p.profit || 0), 0))
-    const currentExposure = openPos.reduce((sum, p) => sum + ((p.volume || p.lotSize || 0) * (p.openPrice || 0)), 0)
-    const unrealizedPnL = openPos.reduce((sum, p) => sum + (p.unrealizedPnl || p.profit || 0), 0)
-    
-    return {
-      totalPositions: allPos.length,
-      openPositions: openPos.length,
-      closedPositions: closedPos.length,
-      totalPnL,
-      totalProfit,
-      totalLoss,
-      winRate: closedPos.length > 0 ? (winningTrades.length / closedPos.length) * 100 : 0,
-      avgWin: winningTrades.length > 0 ? totalProfit / winningTrades.length : 0,
-      avgLoss: losingTrades.length > 0 ? totalLoss / losingTrades.length : 0,
-      profitFactor: totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? Infinity : 0,
-      currentExposure,
-      unrealizedPnL
-    }
-  }
-
-  const stats = calculateStats(positions)
+  // Position calculations are handled in the PositionStatsBar component now.
 
   // Handle real-time updates
   useEffect(() => {
@@ -416,64 +370,7 @@ export default function PositionsPage() {
               </div>
             </div>
 
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Positions</CardTitle>
-                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.totalPositions}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {stats.openPositions} open, {stats.closedPositions} closed
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.winRate.toFixed(1)}%</div>
-                  <p className="text-xs text-muted-foreground">
-                    Success rate from closed positions
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total P&L</CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-2xl font-bold ${getPnLColor(stats.totalPnL)}`}>
-                    {formatPnL(stats.totalPnL)}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    All-time profit/loss
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Unrealized P&L</CardTitle>
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className={`text-2xl font-bold ${getPnLColor(stats.unrealizedPnL)}`}>
-                    {formatPnL(stats.unrealizedPnL)}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Open positions P&L
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
+            {/* Summary cards removed — position stats are available in the fixed bottom bar */}
 
             {/* Filters and Search */}
             <Card>
@@ -957,7 +854,7 @@ export default function PositionsPage() {
           </main>
         </div>
 
-        {/* New Position dialog has been removed along with header button */}
+  {/* New Position dialog has been removed along with header button */}
 
         {/* Edit Position Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -1012,6 +909,8 @@ export default function PositionsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {/* Fixed bottom bar with position stats */}
+        <PositionBottomBar />
       </div>
     </ProtectedRoute>
   )

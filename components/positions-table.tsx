@@ -565,7 +565,7 @@ function PositionsTable() {
     <Card className="h-full">
       <CardContent className="p-0">
         <Tabs defaultValue="open" className="h-full">
-          <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="flex items-center justify-between p-3 border-b">
             <TabsList className="grid w-full max-w-[500px] grid-cols-3">
               <TabsTrigger value="open">Open ({openPositions.length})</TabsTrigger>
               <TabsTrigger value="pending">Pending ({pendingPositions.length})</TabsTrigger>

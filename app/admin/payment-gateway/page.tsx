@@ -179,6 +179,7 @@ export default function PaymentGatewayPage() {
   const [editingBank, setEditingBank] = useState<BankAccountRow | null>(null)
   const [gatewayForm, setGatewayForm] = useState<GatewayFormState>(gatewayFormDefaults)
   const [bankForm, setBankForm] = useState<BankFormState>(bankFormDefaults)
+  const [gatewayFormErrors, setGatewayFormErrors] = useState<string[]>([])
   const { toast } = useToast()
 
   const parseJSON = useCallback(<T,>(value: unknown, fallback: T): T => {
@@ -385,6 +386,7 @@ export default function PaymentGatewayPage() {
     } else {
       setEditingGateway(null)
       setGatewayForm(gatewayFormDefaults)
+      setGatewayFormErrors([])
     }
     setGatewayDialogOpen(true)
   }
@@ -393,6 +395,7 @@ export default function PaymentGatewayPage() {
     setGatewayDialogOpen(false)
     setEditingGateway(null)
     setGatewayForm(gatewayFormDefaults)
+    setGatewayFormErrors([])
   }
 
   const openBankDialog = (account?: BankAccountRow) => {
@@ -485,19 +488,66 @@ export default function PaymentGatewayPage() {
     }
 
     let configuration: Record<string, unknown> = {}
-    try {
-      configuration = gatewayForm.configuration.trim()
-        ? JSON.parse(gatewayForm.configuration)
-        : {}
-    } catch {
-      toast({ title: 'Invalid configuration JSON', description: 'Please provide valid JSON for the configuration field.', variant: 'destructive' })
-      return
+    const rawConfig = gatewayForm.configuration.trim()
+  if (rawConfig) {
+      // Try strict JSON first, then attempt a tolerant sanitize pass for common JS object paste patterns
+      try {
+        configuration = JSON.parse(rawConfig)
+      } catch (err) {
+        // Attempt to transform common JS object literals into valid JSON:
+        // - Remove leading `const foo =` or `let foo =` or `var foo =`
+        // - Remove trailing semicolons
+        // - Replace single quotes with double quotes for keys/values
+        // - Remove trailing commas
+        try {
+          let cleaned = rawConfig
+            .replace(/^\s*(?:const|let|var)\s+[\w$]+\s*=\s*/i, '')
+            .replace(/;\s*$/, '')
+            .trim()
+
+          // Heuristic: if it looks like an object literal, try sanitizing common JS object styles
+          if (/^\{[\s\S]*\}$/.test(cleaned)) {
+            // 1) Quote unquoted keys: {key: -> {"key":
+            //    Only match keys consisting of letters, numbers, _ or $ to avoid touching complex expressions
+            cleaned = cleaned.replace(/([\{,\s])([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":')
+
+            // 2) Replace single quotes around values/strings with double quotes
+            cleaned = cleaned.replace(/'([^']*)'/g, '"$1"')
+          }
+
+          // Remove trailing commas before closing object/array
+          cleaned = cleaned.replace(/,\s*}/g, '}')
+          cleaned = cleaned.replace(/,\s*\]/g, ']')
+
+          configuration = JSON.parse(cleaned)
+          // If parsing succeeded, update the form textarea with a pretty JSON string for clarity
+          setGatewayForm((prev) => ({ ...prev, configuration: JSON.stringify(configuration, null, 2) }))
+        } catch (err2) {
+          console.error('Configuration parse failed:', err, err2)
+          const msg = 'Invalid configuration JSON. Provide valid JSON or paste only the object literal (e.g. {"headers": {"merchant_api_key": "KEY"}}).'
+          toast({ title: 'Invalid configuration JSON', description: msg, variant: 'destructive' })
+          setGatewayFormErrors([msg])
+          return
+        }
+      }
     }
 
     const supportedCurrencies = gatewayForm.supportedCurrencies
       .split(',')
       .map((currency) => currency.trim().toUpperCase())
       .filter(Boolean)
+
+    // Client-side validation: ensure all currency codes are 3 uppercase letters (ISO 4217)
+    const invalidCurrencies = supportedCurrencies.filter(c => !/^[A-Z]{3}$/.test(c))
+    if (invalidCurrencies.length > 0) {
+      const msg = `The following currency codes are invalid: ${invalidCurrencies.join(', ')}. Use 3-letter codes like USD, EUR, GBP.`
+      toast({ title: 'Invalid supported currencies', description: msg, variant: 'destructive' })
+      setGatewayFormErrors([msg])
+      return
+    }
+
+    // Clear errors if validation passed
+    setGatewayFormErrors([])
 
     const commonPayload = {
       displayName: gatewayForm.displayName.trim(),
@@ -1095,6 +1145,17 @@ export default function PaymentGatewayPage() {
                 Configure the payment gateway details and availability for clients.
               </DialogDescription>
             </DialogHeader>
+
+            {gatewayFormErrors.length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <div className="font-medium mb-1">Please fix the following:</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  {gatewayFormErrors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="grid gap-4">
               {!editingGateway && (

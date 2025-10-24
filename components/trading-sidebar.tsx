@@ -135,14 +135,8 @@ export function TradingSidebar({ className, collapsed = false, onCollapsedChange
       >
       {/* Header */}
       <div className="flex h-16 items-center justify-between px-4 border-b border-border">
-        {!collapsed && (
-          <div className="flex items-center space-x-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg">
-              <BarChart3 className="h-5 w-5 text-white" />
-            </div>
-            <span className="font-bold text-xl tracking-tight">TradePro</span>
-          </div>
-        )}
+        {/* Logo removed as requested - keep collapse toggle aligned to the right */}
+        <div />
         <Button
           variant="ghost"
           size="sm"

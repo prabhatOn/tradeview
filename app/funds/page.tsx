@@ -11,10 +11,11 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { DownloadCloud, UploadCloud, TrendingUp, TrendingDown, DollarSign, Wallet, CreditCard } from "lucide-react"
+import { DownloadCloud, UploadCloud, TrendingUp, TrendingDown, DollarSign, Wallet } from "lucide-react"
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import FundsBottomBar from '@/components/funds-bottom-bar'
 import {
   Dialog,
   DialogTrigger,
@@ -368,8 +369,9 @@ export default function FundsPage() {
     };
   }, [activeAccount, toast]);
 
-  const handleDeposit = async (e: FormEvent) => {
-    e.preventDefault()
+  // Extracted submission logic so it can be triggered both from the form submit
+  // and from a keyboard handler (Enter key) when the Select may have focus.
+  const submitDeposit = async () => {
     if (!activeAccount || isSubmitting) return
 
     const amount = parseFloat(depositAmount)
@@ -409,6 +411,30 @@ export default function FundsPage() {
       })
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleDeposit = async (e: FormEvent) => {
+    e.preventDefault()
+    await submitDeposit()
+  }
+
+  // Capture Enter key presses on the form so keyboard users can submit even
+  // when a Select (Radix) component has focus which can otherwise swallow
+  // the Enter key for selection. Prevent double-submit by checking
+  // `isSubmitting` before invoking the submit logic.
+  const handleDepositFormKeyDown = async (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter') {
+      // Log for debugging during reproduction
+      console.log('Deposit form keydown Enter fired, active element:', document.activeElement)
+      // Prevent Radix select from hijacking default behavior in cases where
+      // the form should submit. Stop propagation and prevent default to
+      // avoid any conflicting handlers.
+      e.preventDefault()
+      e.stopPropagation()
+      if (!isSubmitting) {
+        await submitDeposit()
+      }
     }
   }
 
@@ -565,98 +591,7 @@ export default function FundsPage() {
             </div>
           </div>
 
-          {/* Account Overview Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="bg-card/50 border border-border/50 hover:bg-card/70 transition-colors">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Account Balance</CardTitle>
-                <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/20">
-                  <Wallet className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold tracking-tight">${accountStats?.balance?.toFixed(2) || accountStats?.currentBalance?.toFixed(2) || '0.00'}</div>
-                <p className="text-xs text-muted-foreground mt-1">Deposited + Realized P&L</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/50 border border-border/50 hover:bg-card/70 transition-colors">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Available for Trading</CardTitle>
-                <div className="p-2 rounded-full bg-green-100 dark:bg-green-900/20">
-                  <DollarSign className="h-4 w-4 text-green-600 dark:text-green-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold tracking-tight">${accountStats?.availableForTrading?.toFixed(2) || accountStats?.freeMargin?.toFixed(2) || '0.00'}</div>
-                <p className="text-xs text-muted-foreground mt-1">Free margin for trades</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/50 border border-border/50 hover:bg-card/70 transition-colors">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Account Equity</CardTitle>
-                <div className="p-2 rounded-full bg-purple-100 dark:bg-purple-900/20">
-                  <CreditCard className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold tracking-tight">${accountStats?.equity?.toFixed(2) || accountStats?.balance?.toFixed(2) || '0.00'}</div>
-                <p className="text-xs text-muted-foreground mt-1">Balance + Unrealized P&L</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/50 border border-border/50 hover:bg-card/70 transition-colors">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Trading P&L</CardTitle>
-                <div className={`p-2 rounded-full ${(performanceData?.tradingPnL || 0) >= 0 ? 'bg-green-100 dark:bg-green-900/20' : 'bg-red-100 dark:bg-red-900/20'}`}>
-                  {(performanceData?.tradingPnL || 0) >= 0 ? (
-                    <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold tracking-tight ${(performanceData?.tradingPnL || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                  {(performanceData?.tradingPnL || 0) >= 0 ? '+' : ''}${performanceData?.tradingPnL?.toFixed(2) || '0.00'}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">Total from trading</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/50 border border-border/50 hover:bg-card/70 transition-colors">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Return</CardTitle>
-                <div className={`p-2 rounded-full ${(performanceData?.totalReturn || 0) >= 0 ? 'bg-green-100 dark:bg-green-900/20' : 'bg-red-100 dark:bg-red-900/20'}`}>
-                  <DollarSign className={`h-4 w-4 ${(performanceData?.totalReturn || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold tracking-tight ${(performanceData?.totalReturn || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                  {(performanceData?.totalReturn || 0) >= 0 ? '+' : ''}{performanceData?.totalReturn?.toFixed(2) || '0.00'}%
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">Return on investment</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/50 border border-border/50 hover:bg-card/70 transition-colors">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-                <div className="p-2 rounded-full bg-purple-100 dark:bg-purple-900/20">
-                  <TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold tracking-tight text-purple-600 dark:text-purple-400">
-                  {performanceData?.tradingMetrics?.winRate?.toFixed(1) || '0.0'}%
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {performanceData?.tradingMetrics?.winningTrades || 0}/{performanceData?.tradingMetrics?.totalTrades || 0} trades
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Account Overview moved to bottom bar (mobile-first). See FundsBottomBar component. */}
 
           {/* Trading Status Info */}
           {accountStats && (accountStats.openPositions > 0 || accountStats.unrealizedPnL !== 0) && (
@@ -723,7 +658,7 @@ export default function FundsPage() {
                       Add funds to your trading account securely
                     </DialogDescription>
                   </DialogHeader>
-                  <form onSubmit={handleDeposit} className="space-y-5">
+                  <form onSubmit={handleDeposit} onKeyDown={handleDepositFormKeyDown} className="space-y-5">
                     <div className="space-y-2">
                       <Label htmlFor="deposit-amount" className="text-sm font-medium">Amount (USD)</Label>
                       <Input
@@ -967,6 +902,7 @@ export default function FundsPage() {
             </CardContent>
           </Card>
 
+          <FundsBottomBar />
         </main>
       </div>
     </div>
