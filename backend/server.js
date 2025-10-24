@@ -109,8 +109,20 @@ app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Serve uploaded files and mark resources as cross-origin so dev frontend (localhost:3000)
+// can load images directly from backend without CORP blocking.
+app.use(
+  '/uploads',
+  (req, res, next) => {
+    // Allow cross-origin resource loading for images/files hosted here in dev
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    // Also ensure CORS headers are permissive for these assets
+    res.setHeader('Access-Control-Allow-Origin', process.env.NODE_ENV === 'production' ? 'https://your-domain.com' : 'http://localhost:3000');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    next();
+  },
+  express.static(path.join(__dirname, 'uploads'))
+);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

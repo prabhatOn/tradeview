@@ -33,6 +33,13 @@ const normalizeUser = (user: User): User => {
   const lastLogin = user.lastLogin ?? user.last_login;
   const emailVerified = user.emailVerified ?? user.email_verified;
   const kycStatus = user.kycStatus ?? user.kyc_status;
+  // Normalize server-side variants to our canonical UI values
+  let normalizedKyc = (kycStatus ?? '') as string | undefined;
+  if (typeof normalizedKyc === 'string') {
+    const lk = normalizedKyc.toLowerCase().trim();
+    if (lk === 'verified') normalizedKyc = 'approved';
+    if (lk === 'pending_verification') normalizedKyc = 'pending';
+  }
   const avatarUrl = user.avatarUrl ?? user.avatar_url;
   const preferredLeverageRaw = user.preferredLeverage ?? user.preferred_leverage;
   const preferredLeverage =
@@ -48,7 +55,7 @@ const normalizeUser = (user: User): User => {
     updatedAt,
     lastLogin,
     emailVerified,
-    kycStatus,
+  kycStatus: (normalizedKyc as 'pending' | 'submitted' | 'approved' | 'rejected' | undefined),
     avatarUrl,
   preferredLeverage: Number.isFinite(preferredLeverage) ? preferredLeverage : undefined,
     roles: normalizedRoles,
@@ -59,7 +66,7 @@ const normalizeUser = (user: User): User => {
     updated_at: user.updated_at ?? updatedAt,
     last_login: user.last_login ?? lastLogin,
     email_verified: user.email_verified ?? emailVerified,
-    kyc_status: user.kyc_status ?? kycStatus,
+  kyc_status: (user.kyc_status ?? (normalizedKyc as 'pending' | 'submitted' | 'approved' | 'rejected' | undefined)),
     avatar_url: user.avatar_url ?? avatarUrl,
     preferred_leverage:
       user.preferred_leverage ??

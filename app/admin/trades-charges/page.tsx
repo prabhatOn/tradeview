@@ -455,6 +455,9 @@ function TradesChargesContent() {
 
     setUpdatingSymbolId(symbolId)
     try {
+      // Debug: log save attempt and payload
+      // This helps confirm the frontend is initiating the request
+      console.log('[admin-ui] Saving symbol', symbolId, editedSymbolValues)
       const response = await adminService.updateTradingSymbolCharges(symbolId, {
         commissionPerLot: commissionValue,
         swapLong: swapLongValue,
@@ -463,6 +466,8 @@ function TradesChargesContent() {
         marginRequirement: marginRequirementValue,
         status: editedSymbolValues.status
       })
+
+      console.log('[admin-ui] updateTradingSymbolCharges response:', response)
 
       if (!response.success || !response.data) {
         throw new Error(response.message || "Failed to update symbol")

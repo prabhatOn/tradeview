@@ -10,9 +10,19 @@ const errorHandler = (err, req, res, next) => {
   });
 
   // Default error response
+  // Normalize status into a safe numeric HTTP status code
+  const resolveStatus = (s) => {
+    // If it's already a finite number, use it
+    if (typeof s === 'number' && Number.isFinite(s)) return s;
+    // If it's a numeric string, parse it
+    if (typeof s === 'string' && /^\d+$/.test(s)) return parseInt(s, 10);
+    // Otherwise fallback to 500
+    return 500;
+  }
+
   let error = {
     message: err.message || 'Internal Server Error',
-    status: err.status || 500
+    status: resolveStatus(err.status || err.statusCode) || 500
   };
 
   // Handle specific error types
@@ -63,15 +73,19 @@ const errorHandler = (err, req, res, next) => {
     error.message = 'Internal Server Error';
   }
 
-  res.status(error.status).json({
+  // Ensure the status is a valid integer between 100 and 599
+  let safeStatus = Number(error.status) || 500
+  if (!Number.isFinite(safeStatus) || safeStatus < 100 || safeStatus > 599) safeStatus = 500
+
+  res.status(safeStatus).json({
     success: false,
     message: error.message,
     error: {
       message: error.message,
       code: err.code || 'UNKNOWN_ERROR',
-      ...(process.env.NODE_ENV === 'development' && { 
+      ...(process.env.NODE_ENV === 'development' && {
         stack: err.stack,
-        details: err 
+        details: err
       })
     }
   });

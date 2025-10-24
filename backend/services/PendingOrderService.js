@@ -8,28 +8,36 @@ class PendingOrderService {
   static async processPendingOrders() {
     try {
       // Get pending positions and the latest market price for each symbol
+      // Only consider pending orders that were created at least 1 second ago to avoid
+      // immediately filling an order at the exact moment it was placed (race condition)
       const pending = await executeQuery(
-        `SELECT p.id, p.account_id, p.symbol_id, p.side, p.lot_size, p.trigger_price,
+        `SELECT p.id, p.account_id, p.symbol_id, p.side, p.lot_size, p.trigger_price, p.order_type,
                 (SELECT mp2.bid FROM market_prices mp2 WHERE mp2.symbol_id = p.symbol_id ORDER BY mp2.timestamp DESC LIMIT 1) AS bid,
                 (SELECT mp3.ask FROM market_prices mp3 WHERE mp3.symbol_id = p.symbol_id ORDER BY mp3.timestamp DESC LIMIT 1) AS ask
          FROM positions p
-         WHERE p.status = 'pending'
+        WHERE p.status = 'pending' AND p.opened_at < DATE_SUB(NOW(), INTERVAL 5 SECOND)
          ORDER BY p.opened_at ASC`
       );
 
       let filled = 0;
       for (const row of pending) {
-  // For buy orders we should compare against the ask (price you buy at)
-  // For sell orders we should compare against the bid (price you sell at)
+  // Determine market and trigger prices
   const marketPrice = row.side === 'buy' ? parseFloat(row.ask) : parseFloat(row.bid);
   const triggerPrice = parseFloat(row.trigger_price);
+  const orderType = row.order_type || 'limit';
         if (!marketPrice || !triggerPrice) continue;
 
-  // For buy limit: trigger when ask <= triggerPrice
-  // For sell limit: trigger when bid >= triggerPrice
+  // Evaluate based on order_type semantics:
+  // - limit orders: buy -> fill when ask <= triggerPrice, sell -> fill when bid >= triggerPrice
+  // - stop orders:  buy -> fill when ask >= triggerPrice, sell -> fill when bid <= triggerPrice
   let shouldFill = false;
-  if (row.side === 'buy' && marketPrice <= triggerPrice) shouldFill = true;
-  if (row.side === 'sell' && marketPrice >= triggerPrice) shouldFill = true;
+  if (orderType === 'limit') {
+    if (row.side === 'buy' && marketPrice <= triggerPrice) shouldFill = true;
+    if (row.side === 'sell' && marketPrice >= triggerPrice) shouldFill = true;
+  } else if (orderType === 'stop') {
+    if (row.side === 'buy' && marketPrice >= triggerPrice) shouldFill = true;
+    if (row.side === 'sell' && marketPrice <= triggerPrice) shouldFill = true;
+  }
 
         if (shouldFill) {
           try {

@@ -13,9 +13,8 @@ const resolveApiBaseUrl = () => {
   }
 
   if (typeof window !== 'undefined') {
-    const { protocol, hostname } = window.location;
-    const port = process.env.NEXT_PUBLIC_API_PORT || '3001';
-    return `${protocol}//${hostname}:${port}/api`;
+    // In browser, prefer same-origin relative API path so cookies and sessions work via Next proxy
+    return '/api';
   }
 
   return 'http://localhost:3001/api';

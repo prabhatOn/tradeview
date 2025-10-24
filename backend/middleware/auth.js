@@ -42,9 +42,44 @@ const fetchUserById = async (userId) => {
 // Authentication middleware
 const authMiddleware = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    // Debug: log incoming request and token presence (do not log token values)
+    try {
+      const incoming = `${req.method} ${req.originalUrl || req.url}`
+      console.debug(`[auth] Incoming request: ${incoming}`)
+    } catch {
+      // ignore logging errors
+    }
+    // Try Authorization header first, then fallback to accessToken cookie
+    const authHeader = req.header('Authorization')
+    let token = authHeader?.replace('Bearer ', '')
+
+    // helper to parse cookie header if cookie-parser isn't installed
+    const parseCookie = (cookieHeader) => {
+      if (!cookieHeader) return {}
+      return cookieHeader.split(';').map(c => c.trim()).reduce((acc, pair) => {
+        const idx = pair.indexOf('=')
+        if (idx === -1) return acc
+        const key = pair.slice(0, idx)
+        const val = pair.slice(idx + 1)
+        acc[key] = decodeURIComponent(val)
+        return acc
+      }, {})
+    }
 
     if (!token) {
+      // express may expose parsed cookies on req.cookies if cookie-parser is used
+      if (req.cookies && req.cookies.accessToken) {
+        console.debug('[auth] Token found in req.cookies')
+        token = req.cookies.accessToken
+      } else if (req.headers && req.headers.cookie) {
+        const parsed = parseCookie(req.headers.cookie)
+        if (parsed.accessToken) token = parsed.accessToken
+        if (parsed.accessToken) console.debug('[auth] Token found in cookie header')
+      }
+    }
+
+    if (!token) {
+      console.debug('[auth] No token provided')
       return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
 
@@ -53,6 +88,13 @@ const authMiddleware = async (req, res, next) => {
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid token or user not found.' });
+    }
+
+    // Debug: log resolved user id and roles for troubleshooting admin checks
+    try {
+      console.debug(`[auth] Resolved user id=${user.id} roles=${JSON.stringify(user.roles)}`)
+    } catch {
+      // ignore
     }
 
     req.user = user;
@@ -99,7 +141,29 @@ const adminMiddleware = (req, res, next) => {
 // Optional authentication - doesn't fail if no token
 const optionalAuth = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const authHeader = req.header('Authorization')
+    let token = authHeader?.replace('Bearer ', '')
+
+    const parseCookie = (cookieHeader) => {
+      if (!cookieHeader) return {}
+      return cookieHeader.split(';').map(c => c.trim()).reduce((acc, pair) => {
+        const idx = pair.indexOf('=')
+        if (idx === -1) return acc
+        const key = pair.slice(0, idx)
+        const val = pair.slice(idx + 1)
+        acc[key] = decodeURIComponent(val)
+        return acc
+      }, {})
+    }
+
+    if (!token) {
+      if (req.cookies && req.cookies.accessToken) {
+        token = req.cookies.accessToken
+      } else if (req.headers && req.headers.cookie) {
+        const parsed = parseCookie(req.headers.cookie)
+        if (parsed.accessToken) token = parsed.accessToken
+      }
+    }
 
     if (!token) {
       return next();

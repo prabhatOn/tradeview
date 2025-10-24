@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const { executeQuery } = require('../config/database');
 const { asyncHandler } = require('../middleware/async-handler');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const AppError = require('../utils/app-error');
 const Joi = require('joi');
 const multer = require('multer');
@@ -45,6 +45,9 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: fileFilter
 });
+
+// Base URL where uploaded files are served from (backend host)
+const UPLOADS_BASE = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 3001}`
 
 // Apply authentication to all routes
 router.use(authMiddleware);
@@ -95,8 +98,8 @@ router.get('/documents', asyncHandler(async (req, res) => {
   // Convert file paths to URLs
   const documentsWithUrls = documents.map(doc => ({
     ...doc,
-    documentFrontUrl: doc.documentFrontUrl ? `/uploads/kyc/${path.basename(doc.documentFrontUrl)}` : null,
-    documentBackUrl: doc.documentBackUrl ? `/uploads/kyc/${path.basename(doc.documentBackUrl)}` : null
+    documentFrontUrl: doc.documentFrontUrl ? `${UPLOADS_BASE}/uploads/kyc/${path.basename(doc.documentFrontUrl)}` : null,
+    documentBackUrl: doc.documentBackUrl ? `${UPLOADS_BASE}/uploads/kyc/${path.basename(doc.documentBackUrl)}` : null
   }));
 
   res.json({
@@ -272,6 +275,99 @@ router.get('/status', asyncHandler(async (req, res) => {
     success: true,
     data: user || {}
   });
+}));
+
+// ============================================================================
+// ADMIN KYC REVIEW (requires admin role)
+// ============================================================================
+
+// List pending KYC documents for admin review
+router.get('/admin/pending', adminMiddleware, asyncHandler(async (req, res) => {
+  const rows = await executeQuery(`
+    SELECT kd.id, kd.user_id, kd.document_type AS documentType, kd.document_number AS documentNumber,
+           kd.document_front_url AS documentFrontUrl, kd.document_back_url AS documentBackUrl,
+           kd.status, kd.rejection_reason AS rejectionReason, kd.submitted_at AS submittedAt,
+           u.email AS userEmail, u.first_name AS firstName, u.last_name AS lastName, u.phone_number AS phoneNumber
+    FROM kyc_documents kd
+    JOIN users u ON kd.user_id = u.id
+    WHERE kd.status = 'submitted'
+    ORDER BY kd.submitted_at ASC
+  `);
+
+  // convert paths to public urls
+  const result = rows.map(r => ({
+    ...r,
+    documentFrontUrl: r.documentFrontUrl ? `${UPLOADS_BASE}/uploads/kyc/${path.basename(r.documentFrontUrl)}` : null,
+    documentBackUrl: r.documentBackUrl ? `${UPLOADS_BASE}/uploads/kyc/${path.basename(r.documentBackUrl)}` : null
+  }));
+
+  res.json({ success: true, data: result });
+}));
+
+// Get KYC documents for a specific user (admin only)
+router.get('/admin/user/:id/documents', adminMiddleware, asyncHandler(async (req, res) => {
+  const userId = parseInt(req.params.id, 10);
+  if (!userId) {
+    throw new AppError('Invalid user id', 400);
+  }
+
+  const rows = await executeQuery(`
+    SELECT id, document_type AS documentType, document_number AS documentNumber,
+           document_front_url AS documentFrontUrl, document_back_url AS documentBackUrl,
+           status, rejection_reason AS rejectionReason, submitted_at AS submittedAt, verified_at AS verifiedAt, created_at, updated_at
+    FROM kyc_documents
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+  `, [userId]);
+
+  const result = rows.map(r => ({
+    ...r,
+    documentFrontUrl: r.documentFrontUrl ? `${UPLOADS_BASE}/uploads/kyc/${path.basename(r.documentFrontUrl)}` : null,
+    documentBackUrl: r.documentBackUrl ? `${UPLOADS_BASE}/uploads/kyc/${path.basename(r.documentBackUrl)}` : null,
+  }));
+
+  res.json({ success: true, data: result });
+}));
+
+// Approve or reject a KYC document
+router.post('/admin/:id/review', adminMiddleware, asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { action, reason } = req.body; // action: 'approve' | 'reject'
+
+  const [doc] = await executeQuery('SELECT id, user_id, status FROM kyc_documents WHERE id = ?', [id]);
+  if (!doc) throw new AppError('Document not found', 404);
+  if (doc.status === 'verified' && action === 'approve') {
+    throw new AppError('Document already verified', 400);
+  }
+
+  if (action === 'approve') {
+    await executeQuery(`
+      UPDATE kyc_documents SET status = 'verified', verified_at = NOW() WHERE id = ?
+    `, [id]);
+
+    // update user KYC status
+    await executeQuery(`UPDATE users SET kyc_status = 'approved', kyc_approved_at = NOW() WHERE id = ?`, [doc.user_id]);
+
+    await executeQuery(`INSERT INTO user_activity_log (user_id, action_type, ip_address, details) VALUES (?, 'kyc_approved', ?, ?)`,
+      [doc.user_id, req.ip, JSON.stringify({ documentId: id })]);
+
+    return res.json({ success: true, message: 'KYC approved' });
+  }
+
+  if (action === 'reject') {
+    await executeQuery(`
+      UPDATE kyc_documents SET status = 'rejected', rejection_reason = ?, updated_at = NOW() WHERE id = ?
+    `, [reason || null, id]);
+
+    await executeQuery(`UPDATE users SET kyc_status = 'rejected', kyc_rejection_reason = ? WHERE id = ?`, [reason || null, doc.user_id]);
+
+    await executeQuery(`INSERT INTO user_activity_log (user_id, action_type, ip_address, details) VALUES (?, 'kyc_rejected', ?, ?)`,
+      [doc.user_id, req.ip, JSON.stringify({ documentId: id, reason })]);
+
+    return res.json({ success: true, message: 'KYC rejected' });
+  }
+
+  throw new AppError('Invalid action', 400);
 }));
 
 /**

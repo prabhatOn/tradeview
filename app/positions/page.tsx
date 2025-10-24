@@ -50,6 +50,7 @@ import {
 } from "lucide-react"
 import { Position } from "@/lib/types"
 import { normalizePositions, formatPrice, formatPnL, getPnLColor } from "@/lib/utils-trading"
+import { enhancedTradingService } from '@/lib/services'
 
 interface PositionStats {
   totalPositions: number;
@@ -68,7 +69,7 @@ interface PositionStats {
 
 export default function PositionsPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(false)
-  const { activeAccount } = useTrading()
+  const { activeAccount, refreshData } = useTrading()
   const { data: positionsData, isLoading, error, refetch } = usePositions(activeAccount?.id)
   const closePositionMutation = useClosePosition()
   const { toast } = useToast()
@@ -210,26 +211,34 @@ export default function PositionsPage() {
 
   const handleSaveEdit = async () => {
     if (!selectedPosition) return
-    
+
     setIsUpdating(true)
     try {
-      // This would call an update API
       const updateData = {
         stopLoss: editStopLoss ? parseFloat(editStopLoss) : null,
         takeProfit: editTakeProfit ? parseFloat(editTakeProfit) : null,
       }
-      
-      // TODO: Implement position update API call
+
       console.log('Updating position:', selectedPosition.id, updateData)
-      
+
+      // Send both updates in parallel (backend exposes separate endpoints)
+      const slPromise = enhancedTradingService.updateStopLoss(selectedPosition.id, updateData.stopLoss)
+      const tpPromise = enhancedTradingService.updateTakeProfit(selectedPosition.id, updateData.takeProfit)
+
+      const [slResp, tpResp] = await Promise.all([slPromise, tpPromise])
+      console.log('updateStopLoss response:', slResp)
+      console.log('updateTakeProfit response:', tpResp)
+
       toast({
         title: "Position Updated",
         description: `Position #${selectedPosition.id} has been updated successfully.`,
       })
-      
+
       setIsEditDialogOpen(false)
-      refetch()
+      await refetch()
+      if (typeof refreshData === 'function') await refreshData()
     } catch (error) {
+      console.error('Error updating position:', error)
       toast({
         title: "Error Updating Position",
         description: error instanceof Error ? error.message : "Failed to update position",

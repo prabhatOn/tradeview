@@ -338,16 +338,16 @@ class ChargeService {
 
     for (const charge of chargeTypes) {
       // Check if charge exists
-      const [existing] = await executeQuery(
+      const existingRows = await executeQuery(
         `SELECT id FROM trading_charges
          WHERE symbol_id = ? AND charge_type = ? AND account_type = 'live' AND tier_level = 'standard'`,
         [symbolId, charge.type]
       );
 
-      if (existing.length) {
+      if (Array.isArray(existingRows) && existingRows.length > 0) {
         // Update existing charge
         await executeQuery(
-          `UPDATE trading_charges SET charge_value = ?, updated_at = CURRENT_TIMESTAMP
+          `UPDATE trading_charges SET charge_value = ?
            WHERE symbol_id = ? AND charge_type = ? AND account_type = 'live' AND tier_level = 'standard'`,
           [charge.value, symbolId, charge.type]
         );
@@ -403,7 +403,7 @@ class ChargeService {
       if (existing && existing.id) {
         await executeQuery(
           `UPDATE trading_charges
-           SET charge_value = ?, charge_unit = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP
+           SET charge_value = ?, charge_unit = ?, is_active = 1
            WHERE id = ?`,
           [parseNumeric(value, 0), unit || inferUnitDefault(chargeType), existing.id]
         );

@@ -62,10 +62,11 @@ export function KycDocuments() {
       if (response.success) {
         setDocuments(response.data)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error || 'Failed to load KYC documents')
       toast({
         title: "Error",
-        description: error.message || "Failed to load KYC documents",
+        description: msg,
         variant: "destructive"
       })
     } finally {
@@ -77,7 +78,14 @@ export function KycDocuments() {
     try {
       const response = await apiClient.get('/kyc/status')
       if (response.success) {
-        setKycStatus(response.data)
+        // Normalize server status values to our UI enum
+        const server = response.data || {}
+        const raw = (server.kycStatus || '').toString().toLowerCase()
+        let normalized = raw
+        if (raw === 'verified') normalized = 'approved'
+        if (raw === 'pending_verification') normalized = 'pending'
+
+        setKycStatus({ ...server, kycStatus: normalized })
       }
     } catch (error) {
       console.error('Failed to fetch KYC status:', error)
@@ -130,10 +138,11 @@ export function KycDocuments() {
       } else {
         throw new Error(result.message || 'Upload failed')
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error || 'Failed to upload document')
       toast({
         title: "Error",
-        description: error.message || "Failed to upload document",
+        description: msg,
         variant: "destructive"
       })
     } finally {
@@ -151,10 +160,11 @@ export function KycDocuments() {
         })
         fetchDocuments()
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error || 'Failed to delete document')
       toast({
         title: "Error",
-        description: error.message || "Failed to delete document",
+        description: msg,
         variant: "destructive"
       })
     }
@@ -164,7 +174,9 @@ export function KycDocuments() {
     const config = {
       pending: { label: "Pending", icon: <Clock className="h-3 w-3" />, variant: "secondary" as const, className: "" },
       submitted: { label: "Submitted", icon: <Clock className="h-3 w-3" />, variant: "default" as const, className: "" },
+      // document-level status uses 'verified', user-level KYC uses 'approved' — treat both as success
       verified: { label: "Verified", icon: <CheckCircle2 className="h-3 w-3" />, variant: "default" as const, className: "bg-green-500" },
+      approved: { label: "Approved", icon: <CheckCircle2 className="h-3 w-3" />, variant: "default" as const, className: "bg-green-500" },
       rejected: { label: "Rejected", icon: <XCircle className="h-3 w-3" />, variant: "destructive" as const, className: "" }
     }
     const item = config[status as keyof typeof config] || config.pending
@@ -308,7 +320,7 @@ export function KycDocuments() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <h4 className="font-semibold">{getDocumentTypeName(doc.documentType)}</h4>
-                      {getStatusBadge(doc.status)}
+                      {getStatusBadge((kycStatus?.kycStatus === 'approved' && doc.status !== 'rejected') ? 'approved' : doc.status)}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Document Number: {doc.documentNumber}
@@ -342,7 +354,7 @@ export function KycDocuments() {
                       )}
                     </div>
                   </div>
-                  {doc.status !== 'verified' && (
+                  {!(kycStatus?.kycStatus === 'approved') && doc.status !== 'verified' && (
                     <Button
                       variant="ghost"
                       size="icon"

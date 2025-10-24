@@ -2333,6 +2333,9 @@ router.patch('/trading/charges/symbols/:symbolId', asyncHandler(async (req, res)
     throw new AppError(error.details.map((detail) => detail.message).join(', '), 400);
   }
 
+  // Log incoming update for debugging — helps verify payload from frontend
+  console.log('[admin] PATCH /trading/charges/symbols/%d payload:', symbolId, JSON.stringify(value));
+
   await ChargeService.updateSymbolCharges(symbolId, value);
 
   const updatedSymbols = await ChargeService.listSymbolCharges();
@@ -2341,6 +2344,9 @@ router.patch('/trading/charges/symbols/:symbolId', asyncHandler(async (req, res)
   if (!updatedSymbol) {
     throw new AppError('Symbol not found after update', 404);
   }
+
+  // Log result for debugging
+  console.log('[admin] updated symbol charges for id=%d ->', symbolId, JSON.stringify(updatedSymbol));
 
   res.json({
     success: true,

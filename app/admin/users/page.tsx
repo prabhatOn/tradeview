@@ -43,17 +43,9 @@ import {
 } from "@/components/ui/form"
 import { Switch } from "@/components/ui/switch"
 import {
-  LayoutDashboard,
-  Users,
-  Receipt,
-  TrendingUp,
-  HeadphonesIcon,
-  CreditCard,
-  Wallet,
   Search,
   Plus,
   Shield,
-  ShieldAlert,
   ShieldCheck,
   ShieldOff,
   UserCheck,
@@ -64,10 +56,12 @@ import {
   ArrowRight,
   Lock,
   Unlock,
-  Trash2,
+  ShieldAlert,
   Link2,
-  Link2Off
+  Link2Off,
+  Trash2,
 } from "lucide-react"
+import KycModal from "@/components/admin/kyc-modal"
 import { adminService } from "@/lib/services"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -333,6 +327,8 @@ export default function UsersPage() {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const [selectedUserPreview, setSelectedUserPreview] = useState<AdminUserRow | null>(null)
   const [selectedUserDetail, setSelectedUserDetail] = useState<AdminUserDetail | null>(null)
+  const [isKycModalOpen, setIsKycModalOpen] = useState(false)
+  const [kycUserId, setKycUserId] = useState<number | null>(null)
   const [isLoadingUserDetail, setIsLoadingUserDetail] = useState(false)
   const [userDetailError, setUserDetailError] = useState<string | null>(null)
   const [isDetailStatusUpdating, setIsDetailStatusUpdating] = useState(false)
@@ -581,6 +577,11 @@ export default function UsersPage() {
     setSelectedUserDetail(null)
     setUserDetailError(null)
     setIsUserDetailOpen(true)
+  }, [])
+
+  const handleOpenKycModal = useCallback((userId: number) => {
+    setKycUserId(userId)
+    setIsKycModalOpen(true)
   }, [])
 
   const handleUserDetailDialogChange = useCallback((open: boolean) => {
@@ -1175,6 +1176,17 @@ export default function UsersPage() {
                                   className="h-8"
                                   onClick={(event) => {
                                     event.stopPropagation()
+                                    handleOpenKycModal(user.id)
+                                  }}
+                                >
+                                  View KYC
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
                                     handleStatusToggle(user)
                                   }}
                                   disabled={updatingUserId === user.id}
@@ -1254,6 +1266,10 @@ export default function UsersPage() {
                             >
                               {verifyingUserId === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : user.isVerified ? <ShieldOff className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
                             </Button>
+                            <Button size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); handleOpenKycModal(user.id) }}>
+                              <span className="sr-only">View KYC</span>
+                              KYC
+                            </Button>
                             <Button
                               size="icon"
                               variant="ghost"
@@ -1302,6 +1318,25 @@ export default function UsersPage() {
               </div>
             </CardContent>
           </Card>
+          <KycModal
+            userId={kycUserId}
+            open={isKycModalOpen}
+            adminMode={true}
+            adminUserId={kycUserId}
+            onClose={() => {
+              setIsKycModalOpen(false)
+              setKycUserId(null)
+            }}
+            onApproved={() => {
+              // refresh users and detail if open
+              fetchUsers()
+              if (selectedUserId) fetchUserDetail(selectedUserId)
+            }}
+            onRejected={() => {
+              fetchUsers()
+              if (selectedUserId) fetchUserDetail(selectedUserId)
+            }}
+          />
         </div>
 
         <Dialog open={isCreateDialogOpen} onOpenChange={handleDialogOpenChange}>

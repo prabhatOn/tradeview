@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const express = require('express');
 const Joi = require('joi');
-const { executeQuery } = require('../config/database');
+const { executeQuery, executeTransaction } = require('../config/database');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const Position = require('../models/Position');
 const TradingAccount = require('../models/TradingAccount');
@@ -452,44 +452,89 @@ router.post('/positions', asyncHandler(async (req, res) => {
 
   // If this is a limit order, create a pending position with trigger_price
   let position = null;
+  let createdOrderId = null;
   // If orderType is limit but no triggerPrice provided, reject the request
   if (orderType === 'limit' && (triggerPrice === undefined || triggerPrice === null)) {
     throw new AppError('triggerPrice is required for limit orders', 400);
   }
 
+  // Normalize order type: if user selected 'limit' but the trigger is on the other side
+  // of the current market price, treat it as a 'stop' order instead. This prevents
+  // immediate fills when a user accidentally uses 'limit' with a trigger above/below
+  // the market (common UX confusion).
+  let normalizedOrderType = orderType;
   if (orderType === 'limit' && triggerPrice !== undefined && triggerPrice !== null) {
-    // insert pending position
-    const insert = await executeQuery(
-      `INSERT INTO positions (
-        account_id, symbol_id, order_id, side, lot_size, open_price, stop_loss, take_profit, commission, comment, order_type, trigger_price, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [tradingAccount.id, symbolId, null, side, lotSize, openPrice, stopLoss || null, takeProfit || null, 0, comment, 'limit', triggerPrice]
-    );
+    // For buys: a triggerPrice > openPrice is a 'stop' (buy stop). For sells: triggerPrice < openPrice is a 'stop' (sell stop).
+    if ((side === 'buy' && triggerPrice > openPrice) || (side === 'sell' && triggerPrice < openPrice)) {
+      normalizedOrderType = 'stop';
+    } else {
+      normalizedOrderType = 'limit';
+    }
+  }
 
-    // Update the order_id to be the same as the position id for tracking
-    await executeQuery(
-      'UPDATE positions SET order_id = ? WHERE id = ?',
-      [insert.insertId, insert.insertId]
-    );
+  if (normalizedOrderType === 'limit' && triggerPrice !== undefined && triggerPrice !== null ||
+      normalizedOrderType === 'stop' && triggerPrice !== undefined && triggerPrice !== null) {
+    // Create an order record first, then create the pending position referencing that order.
+    // Use a transaction so both inserts succeed or both rollback.
+    try {
+  const result = await executeTransaction(async (connection) => {
+        // Insert order
+        const [orderInsert] = await connection.execute(
+          `INSERT INTO orders (
+            account_id, symbol_id, order_type, side, lot_size, price, stop_loss, take_profit, status, commission, swap, comment, magic_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 0, ?, NULL)`,
+          [tradingAccount.id, symbolId, normalizedOrderType, side, lotSize, triggerPrice, stopLoss || null, takeProfit || null, comment]
+        );
 
-    const created = await executeQuery(
-      `SELECT p.*, s.contract_size, s.pip_size, ta.account_number, s.symbol FROM positions p JOIN symbols s ON p.symbol_id = s.id JOIN trading_accounts ta ON p.account_id = ta.id WHERE p.id = ?`,
-      [insert.insertId]
-    );
+        const orderId = orderInsert.insertId;
 
-    position = created.length ? new Position(created[0]) : null;
+        // Insert pending position referencing the newly created order
+        const [posInsert] = await connection.execute(
+          `INSERT INTO positions (
+            account_id, symbol_id, order_id, side, lot_size, open_price, stop_loss, take_profit, commission, comment, order_type, trigger_price, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+          [tradingAccount.id, symbolId, orderId, side, lotSize, openPrice, stopLoss || null, takeProfit || null, 0, comment, normalizedOrderType, triggerPrice]
+        );
+
+        return { orderId, positionId: posInsert.insertId };
+      });
+
+      // capture order id for response
+      createdOrderId = result.orderId;
+
+      const created = await executeQuery(
+        `SELECT p.*, s.contract_size, s.pip_size, ta.account_number, s.symbol FROM positions p JOIN symbols s ON p.symbol_id = s.id JOIN trading_accounts ta ON p.account_id = ta.id WHERE p.id = ?`,
+        [result.positionId]
+      );
+
+      position = created.length ? new Position(created[0]) : null;
+    } catch (err) {
+      console.error('Failed to create pending limit order and position in transaction:', err);
+      throw err;
+    }
   } else {
     // Create immediate market position
-    position = await Position.create({
-      accountId,
-      symbolId,
-      side,
-      lotSize,
-      openPrice,
-      stopLoss,
-      takeProfit,
-      comment
-    });
+    try {
+      position = await Position.create({
+        accountId,
+        symbolId,
+        side,
+        lotSize,
+        openPrice,
+        stopLoss,
+        takeProfit,
+        comment
+      });
+    } catch (err) {
+      // Log detailed SQL error info to help diagnose foreign-key / constraint failures
+      console.error('Error while creating position (SQL/DB error):', {
+        message: err.message,
+        code: err.code,
+        stack: err.stack
+      });
+      // Re-throw so errorHandler formats and returns a proper response
+      throw err;
+    }
   }
 
   if (!position) {
@@ -506,7 +551,8 @@ router.post('/positions', asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Position opened successfully',
-    data: position.toJSON()
+    data: position.toJSON(),
+    meta: createdOrderId ? { orderId: createdOrderId } : undefined
   });
 }));
 
@@ -860,15 +906,17 @@ router.get('/accounts/:accountId/margin-info', asyncHandler(async (req, res) => 
     success: true,
     data: {
       accountId: account.id,
-      balance: parseFloat(account.balance),
-      equity: parseFloat(account.equity),
-      marginUsed: parseFloat(account.margin_used || 0),
-      freeMargin: parseFloat(account.free_margin || 0),
-      marginLevel: parseFloat(account.margin_level || 0),
-      marginCallLevel: parseFloat(account.margin_call_level || 50),
-      stopOutLevel: parseFloat(account.stop_out_level || 20),
-      tradingPower: parseFloat(account.balance) * parseFloat(account.leverage),
-      leverage: parseFloat(account.leverage)
+      balance: Number.isFinite(account.balance) ? parseFloat(account.balance) : parseFloat(account.balance || 0),
+      equity: Number.isFinite(account.equity) ? parseFloat(account.equity) : parseFloat(account.equity || 0),
+      // use the TradingAccount instance properties (camelCase) populated by refreshAccountMetrics
+      marginUsed: parseFloat(account.usedMargin || 0),
+      freeMargin: parseFloat(account.freeMargin || 0),
+      marginLevel: parseFloat(account.marginLevel || 0),
+      // margin call / stop out levels are system-level settings; fallback to sensible defaults
+      marginCallLevel: parseFloat(account.marginCallLevel || 50),
+      stopOutLevel: parseFloat(account.stopOutLevel || 20),
+      tradingPower: (parseFloat(account.balance || 0) * parseFloat(account.leverage || 1)),
+      leverage: parseFloat(account.leverage || 1)
     }
   });
 }));
@@ -959,10 +1007,13 @@ router.put('/positions/:positionId/stop-loss', asyncHandler(async (req, res) => 
   );
   console.log('Verification query result:', verifyResult);
 
+  // Fetch and return the updated position object for immediate UI update
+  const updatedPosition = await Position.findById(parseInt(positionId));
+
   res.json({
     success: true,
     message: 'Stop loss updated successfully',
-    data: {
+    data: updatedPosition ? updatedPosition.toJSON() : {
       positionId: parseInt(positionId),
       stopLoss: stopLoss
     }
@@ -1011,10 +1062,13 @@ router.put('/positions/:positionId/take-profit', asyncHandler(async (req, res) =
     [takeProfit, positionId]
   );
 
+  // Fetch and return the updated position object for immediate UI update
+  const updatedPos = await Position.findById(parseInt(positionId));
+
   res.json({
     success: true,
     message: 'Take profit updated successfully',
-    data: {
+    data: updatedPos ? updatedPos.toJSON() : {
       positionId: parseInt(positionId),
       takeProfit: takeProfit
     }

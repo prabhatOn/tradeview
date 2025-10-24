@@ -1010,7 +1010,9 @@ export default function IntroducingBrokerPageV2() {
       <div className="flex min-h-screen bg-muted/20">
         <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
         <Toaster />
-        <div className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6 lg:px-12">
+        <div className={`flex flex-1 items-center justify-center transition-all duration-300 ${
+          sidebarCollapsed ? "sm:pl-20 pl-4 pr-4 sm:pr-6" : "sm:pl-68 pl-4 pr-4 sm:pr-6"
+        } py-10 sm:px-6 lg:px-12`}>
           <Card className="w-full max-w-xl border border-border/60 bg-card/90 shadow-xl">
             <CardHeader className="space-y-2">
               <CardTitle className="text-2xl font-semibold text-foreground">Introducing Broker Program</CardTitle>
@@ -1056,7 +1058,9 @@ export default function IntroducingBrokerPageV2() {
     <div className="flex min-h-screen bg-muted/20">
       <TradingSidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
       <Toaster />
-      <div className="flex-1">
+      <div className={`flex-1 transition-all duration-300 ${
+        sidebarCollapsed ? "sm:pl-20 pl-4 pr-4 sm:pr-6" : "sm:pl-68 pl-4 pr-4 sm:pr-6"
+      }`}>
         <main className="mx-auto w-full max-w-[1400px] space-y-8 px-4 py-10 sm:px-6 lg:px-12 pb-28 sm:pb-6">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="w-full text-center sm:text-left">

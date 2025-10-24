@@ -97,8 +97,8 @@ export function Navbar() {
               </Button>
             </div>
 
-            {/* Mobile compact controls */}
-            <div className="flex items-center gap-2 sm:hidden">
+            {/* Theme toggle and profile - visible on all screen sizes */}
+            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="sm"

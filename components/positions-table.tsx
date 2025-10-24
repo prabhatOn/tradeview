@@ -53,8 +53,8 @@ import {
 } from "@/components/ui/tooltip"
 
 function PositionsTable() {
-  const { activeAccount } = useTrading()
-  const { data: positionsData, isLoading, error, refetch } = usePositions(activeAccount?.id)
+  const { activeAccount, refreshData } = useTrading()
+  const { data: positionsData, isLoading, error, refetch, clearCache } = usePositions(activeAccount?.id)
   const closePosition = useClosePosition()
   const [closingPositions, setClosingPositions] = useState<Set<number>>(new Set())
   const [lastUpdate, setLastUpdate] = useState<string>('')
@@ -95,7 +95,19 @@ function PositionsTable() {
       })
       setEditingSL(null)
       setNewSL('')
-      refetch()
+      // Clear cached positions and refetch to ensure UI shows the updated SL immediately
+      try {
+        if (clearCache) clearCache()
+      } catch {
+        // noop
+      }
+      await refetch()
+      // Also refresh the shared TradingContext so other components (details modal, pages) update
+      try {
+        if (refreshData) await refreshData()
+      } catch (err) {
+        console.warn('refreshData failed', err)
+      }
     } catch (error) {
       console.error('Stop loss update error:', error)
       toast({
@@ -132,7 +144,19 @@ function PositionsTable() {
       })
       setEditingTP(null)
       setNewTP('')
-      refetch()
+      // Clear cached positions and refetch to ensure UI shows the updated TP immediately
+      try {
+        if (clearCache) clearCache()
+      } catch {
+        // noop
+      }
+      await refetch()
+      // Also refresh the shared TradingContext so other components (details modal, pages) update
+      try {
+        if (refreshData) await refreshData()
+      } catch (err) {
+        console.warn('refreshData failed', err)
+      }
     } catch (error) {
       console.error('Take profit update error:', error)
       toast({

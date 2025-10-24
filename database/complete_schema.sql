@@ -30,13 +30,22 @@ CREATE TABLE users (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     phone VARCHAR(20),
+    phone_number VARCHAR(50),
     date_of_birth DATE,
+    address VARCHAR(500),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    country VARCHAR(100) DEFAULT 'India',
     avatar_url VARCHAR(500),
     bio TEXT,
     status ENUM('active', 'inactive', 'suspended', 'pending_verification') DEFAULT 'pending_verification',
     email_verified BOOLEAN DEFAULT FALSE,
     phone_verified BOOLEAN DEFAULT FALSE,
     kyc_status ENUM('pending', 'submitted', 'approved', 'rejected') DEFAULT 'pending',
+    kyc_submitted_at TIMESTAMP NULL,
+    kyc_approved_at TIMESTAMP NULL,
+    kyc_rejection_reason VARCHAR(500) NULL,
     preferred_leverage DECIMAL(8,2) DEFAULT 100.00,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -124,6 +133,7 @@ CREATE TABLE trading_accounts (
     used_margin DECIMAL(15,4) DEFAULT 0.0000,
     free_margin DECIMAL(15,4) DEFAULT 0.0000,
     margin_level DECIMAL(8,2) DEFAULT 0.00,
+    auto_square_percent DECIMAL(5,2) DEFAULT NULL COMMENT 'Auto square-off threshold % of balance',
     status ENUM('active', 'inactive', 'frozen', 'closed') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -513,6 +523,7 @@ CREATE TABLE withdrawals (
     processed_by INT,
     processed_at TIMESTAMP NULL,
     batch_reference VARCHAR(100),
+    payment_gateway_id INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
@@ -527,6 +538,7 @@ CREATE TABLE withdrawals (
     INDEX idx_created_at (created_at),
     INDEX idx_reviewed_by (reviewed_by),
     INDEX idx_batch_reference (batch_reference),
+    INDEX idx_withdrawal_gateway (payment_gateway_id),
     INDEX idx_transaction_id (transaction_id)
 );
 
@@ -661,11 +673,19 @@ CREATE TABLE ib_commissions (
     client_user_id INT NOT NULL,
     commission_amount DECIMAL(12,4) NOT NULL,
     commission_rate DECIMAL(8,6) NOT NULL,
+    total_commission DECIMAL(15,4) NOT NULL DEFAULT 0.0000 COMMENT 'Total commission before split',
+    ib_share_percent DECIMAL(5,2) NOT NULL DEFAULT 50.00 COMMENT 'IB share percentage at time of trade',
+    ib_amount DECIMAL(15,4) NOT NULL DEFAULT 0.0000 COMMENT 'Amount going to IB',
+    admin_amount DECIMAL(15,4) NOT NULL DEFAULT 0.0000 COMMENT 'Amount retained by admin',
+    client_commission DECIMAL(15,4) DEFAULT 0.0000 COMMENT 'Commission paid by client',
     trade_volume DECIMAL(12,4) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'USD',
     profit DECIMAL(12,4) DEFAULT 0.0000,
     symbol VARCHAR(20),
     side ENUM('buy', 'sell'),
     lot_size DECIMAL(8,4),
+    payment_method ENUM('account_credit','bank_transfer','check') DEFAULT 'account_credit',
+    notes TEXT DEFAULT NULL,
     status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending',
     paid_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -682,13 +702,27 @@ CREATE TABLE ib_commissions (
     INDEX idx_created_at (created_at)
 );
 
+-- IB Global Settings
+CREATE TABLE ib_global_settings (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    setting_key VARCHAR(100) UNIQUE NOT NULL,
+    setting_value VARCHAR(255) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_setting_key (setting_key),
+    INDEX idx_is_active (is_active)
+);
+
 -- Referral codes
 CREATE TABLE referral_codes (
     id INT PRIMARY KEY AUTO_INCREMENT,
     user_id INT NOT NULL,
     code VARCHAR(20) UNIQUE NOT NULL,
     max_usage INT,
-    current_usage INT DEFAULT 0,
+    usage_count INT DEFAULT 0,
     expires_at TIMESTAMP NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -783,13 +817,16 @@ CREATE TABLE kyc_documents (
     user_id INT NOT NULL,
     document_type ENUM('passport', 'drivers_license', 'national_id', 'utility_bill', 'bank_statement', 'proof_of_address', 'other') NOT NULL,
     document_number VARCHAR(100),
-    file_path VARCHAR(500) NOT NULL,
-    file_name VARCHAR(255) NOT NULL,
-    mime_type VARCHAR(100),
-    file_size INT,
-    status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+    document_front_url VARCHAR(255) NULL,
+    document_back_url VARCHAR(255) NULL,
+    mime_type VARCHAR(100) NULL,
+    file_size INT NULL,
+    status ENUM('submitted','verified','rejected') DEFAULT 'submitted',
     rejection_reason TEXT,
-    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    submitted_at TIMESTAMP NULL,
+    verified_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     reviewed_by INT,
     reviewed_at TIMESTAMP NULL,
     expires_at DATE,
@@ -820,6 +857,10 @@ CREATE TABLE bank_details (
     is_primary BOOLEAN DEFAULT FALSE,
     verification_status ENUM('pending', 'verified', 'rejected') DEFAULT 'pending',
     verification_date TIMESTAMP NULL,
+    account_holder_name VARCHAR(150),
+    ifsc_code VARCHAR(20),
+    verified_at TIMESTAMP NULL,
+    status ENUM('pending_verification','verified','rejected') DEFAULT 'pending_verification',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
@@ -933,6 +974,8 @@ CREATE TABLE trading_charges (
     is_active BOOLEAN DEFAULT TRUE,
     effective_from TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     effective_to TIMESTAMP NULL,
+    -- Backwards-compatible column used by some services: keep both names to avoid runtime errors
+    effective_until TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (symbol_id) REFERENCES symbols(id) ON DELETE CASCADE,
@@ -1032,6 +1075,7 @@ CREATE TABLE user_activity_log (
     id INT PRIMARY KEY AUTO_INCREMENT,
     user_id INT NOT NULL,
     action_type VARCHAR(100) NOT NULL,
+    details JSON,
     description TEXT,
     ip_address VARCHAR(45),
     user_agent TEXT,
@@ -1262,6 +1306,17 @@ INSERT INTO notification_templates (name, type, subject, body, variables) VALUES
 ('withdrawal_processed', 'email', 'Withdrawal Processed', 'Your withdrawal request of {{amount}} {{currency}} has been processed.', '["amount", "currency"]'),
 ('margin_call', 'email', 'Margin Call Alert', 'Your account margin level has fallen below the required threshold. Please add funds or close positions.', '[]'),
 ('trade_executed', 'in_app', 'Trade Executed', 'Your {{side}} order for {{symbol}} has been executed at {{price}}.', '["side", "symbol", "price"]');
+
+-- Insert IB global settings
+INSERT INTO ib_global_settings (setting_key, setting_value, description) VALUES
+('default_ib_share_percent', '50.0', 'Default percentage of commission that goes to IB'),
+('min_ib_share_percent', '10.0', 'Minimum allowed IB share percentage'),
+('max_ib_share_percent', '90.0', 'Maximum allowed IB share percentage'),
+('default_commission_rate', '0.0070', 'Default commission rate for new IB relationships'),
+('ib_tier_bronze_threshold', '0', 'Commission threshold for bronze tier'),
+('ib_tier_silver_threshold', '1000.00', 'Commission threshold for silver tier'),
+('ib_tier_gold_threshold', '5000.00', 'Commission threshold for gold tier'),
+('ib_tier_platinum_threshold', '10000.00', 'Commission threshold for platinum tier');
 
 -- =================================================================
 -- VIEWS FOR COMMON QUERIES
