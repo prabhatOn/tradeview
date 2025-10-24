@@ -73,7 +73,7 @@ export default function BottomStatsBar() {
   }, [activeAccount, accountSummary])
 
   return (
-    <div className="fixed left-0 right-0 sm:bottom-0 bottom-16 bg-black z-[10] border-t py-2">
+    <div className="fixed left-0 right-0 sm:bottom-0 bottom-16 bg-background z-[10] border-t py-2">
       <div className={`max-w-screen-xl mx-auto transition-all duration-300 ${sidebarCollapsed ? 'sm:pl-20 pl-4 pr-4' : 'sm:pl-68 pl-4 pr-4'}`}>
         {/* Mobile layout - single row with key stats */}
         <div className="flex sm:hidden items-center justify-between text-sm">

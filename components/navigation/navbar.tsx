@@ -41,7 +41,7 @@ export function Navbar() {
 
   if (!isAuthenticated) {
     return (
-      <nav className="sticky top-0 z-50 border-b bg-black">
+      <nav className="sticky top-0 z-50 border-b bg-background">
         <div className="container mx-auto px-4">
           <div className="flex h-16 items-center justify-between">
             <Link href="/" className="flex items-center space-x-2">
@@ -64,7 +64,7 @@ export function Navbar() {
   }
 
   return (
-    <nav className="sticky top-0 z-500 border-b bg-black shadow-sm">
+    <nav className="sticky top-0 z-500 border-b bg-background shadow-sm">
       <div className="px-5 w-full">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
@@ -87,7 +87,7 @@ export function Navbar() {
             </div>
             <div className="hidden sm:flex">
               <Button
-                className="bg-trading-success hover:bg-trading-success/90 text-white"
+                className="bg-trading-success hover:bg-trading-success/90 text-black dark:text-white"
                 asChild
               >
                 <Link href="/funds" className="flex items-center gap-2">
