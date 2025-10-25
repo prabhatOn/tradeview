@@ -1256,14 +1256,14 @@ router.patch('/deposits/:id/process', asyncHandler(async (req, res) => {
       UPDATE deposits 
       SET status = 'completed', admin_notes = ?, processed_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `, [adminNotes, depositId]);
+    `, [adminNotes ?? null, depositId]);
   } else {
     // Update deposit status to rejected
     await executeQuery(`
       UPDATE deposits 
       SET status = 'rejected', admin_notes = ?, processed_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `, [adminNotes, depositId]);
+    `, [adminNotes ?? null, depositId]);
   }
 
   // Log admin action
@@ -1310,14 +1310,14 @@ router.patch('/withdrawals/:id/process', asyncHandler(async (req, res) => {
       UPDATE withdrawals 
       SET status = 'completed', admin_notes = ?, processed_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `, [adminNotes, withdrawalId]);
+    `, [adminNotes ?? null, withdrawalId]);
   } else {
     // Update withdrawal status to rejected
     await executeQuery(`
       UPDATE withdrawals 
       SET status = 'rejected', admin_notes = ?, processed_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `, [adminNotes, withdrawalId]);
+    `, [adminNotes ?? null, withdrawalId]);
   }
 
   // Log admin action
@@ -1327,6 +1327,45 @@ router.patch('/withdrawals/:id/process', asyncHandler(async (req, res) => {
   `, [req.user.id, `withdrawal_${action}`, withdrawalId, JSON.stringify({ adminNotes })]);
 
   res.json({ message: `Withdrawal ${action}ed successfully` });
+}));
+
+// ------------------------------------------------------------------
+// Payment Gateways admin endpoints
+// ------------------------------------------------------------------
+// List payment gateways (admin)
+router.get('/payment-gateways/admin', asyncHandler(async (req, res) => {
+  const rows = await executeQuery(`
+    SELECT id, name, display_name, type, provider, is_active, min_amount, max_amount, processing_fee_type, processing_fee_value, processing_time_hours, supported_currencies, configuration, icon_url, description, sort_order
+    FROM payment_gateways
+    ORDER BY sort_order ASC, display_name ASC
+  `);
+
+  res.json({ success: true, data: rows });
+}));
+
+// Toggle gateway active state
+router.patch('/payment-gateways/admin/:id/toggle', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (Number.isNaN(id)) throw new AppError('Invalid gateway id', 400);
+
+  const current = await executeQuery('SELECT id, is_active FROM payment_gateways WHERE id = ? LIMIT 1', [id]);
+  if (!current || !current.length) throw new AppError('Gateway not found', 404);
+
+  const newState = current[0].is_active ? 0 : 1;
+  await executeQuery('UPDATE payment_gateways SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newState, id]);
+
+  // Log admin action (best-effort; don't fail the toggle if logging isn't available)
+  try {
+    await executeQuery(`
+      INSERT INTO admin_actions (admin_user_id, action, target_type, target_id, details)
+      VALUES (?, ?, 'payment_gateway', ?, ?)
+    `, [req.user && req.user.id ? req.user.id : null, `gateway_${newState ? 'enable' : 'disable'}`, id, JSON.stringify({ gatewayId: id, enabled: Boolean(newState) })]);
+  } catch (err) {
+    // ignore logging errors
+    console.warn('admin action log failed', err && err.message);
+  }
+
+  res.json({ success: true, message: `Gateway ${newState ? 'enabled' : 'disabled'}`, data: { id, is_active: Boolean(newState) } });
 }));
 
 // Get support tickets

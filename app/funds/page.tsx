@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { DownloadCloud, UploadCloud, TrendingUp, TrendingDown, DollarSign, Wallet } from "lucide-react"
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
+import Image from 'next/image'
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import FundsBottomBar from '@/components/funds-bottom-bar'
@@ -28,15 +29,16 @@ import {
 } from "@/components/ui/dialog"
 
 interface FundingMethod {
-  type: string;
-  name: string;
-  // Optional simple numeric range/fee fields (used by defaultMethods)
-  minAmount?: number;
-  maxAmount?: number;
-  fee?: number | string;
+  id?: number | string;
+  type: string; // e.g. 'bank_transfer', 'credit_card', 'e_wallet'
+  name: string; // display name
+  provider?: string; // provider id like 'stripe', 'razorpay', 'upi', 'oxapay'
+  display_name?: string;
+  icon_url?: string | null;
   processingTime?: string;
-  available?: boolean;
-  // Optional detailed fee/limit structures (some APIs may return these)
+  processingTimeHours?: number;
+  supported_currencies?: string[];
+  configuration?: Record<string, unknown>;
   depositLimits?: { min: number; max: number };
   withdrawalLimits?: { min: number; max: number };
   fees?: { deposit: string | number; withdrawal: string | number };
@@ -74,6 +76,17 @@ interface BalanceHistoryItem {
   formatted_date: string;
 }
 
+interface DepositRow {
+  id: number;
+  transaction_id: string;
+  amount: number | string;
+  fee?: number | string;
+  net_amount?: number | string;
+  status: string;
+  payment_reference?: string;
+  created_at?: string;
+}
+
 interface PerformanceData {
   currentBalance: number;
   totalDeposits: number;
@@ -107,13 +120,15 @@ export default function FundsPage() {
   const [accountStats, setAccountStats] = useState<AccountStats | null>(null)
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null)
   const [balanceHistory, setBalanceHistory] = useState<BalanceHistoryItem[]>([])
+  const [pendingDeposits, setPendingDeposits] = useState<DepositRow[]>([])
   const [fundingMethods, setFundingMethods] = useState<FundingMethod[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   // Form states
   const [depositAmount, setDepositAmount] = useState('')
   const [withdrawAmount, setWithdrawAmount] = useState('')
-  const [depositMethod, setDepositMethod] = useState('bank_transfer')
+  const [depositMethodId, setDepositMethodId] = useState<string | null>('bank_transfer')
+  const [selectedGateway, setSelectedGateway] = useState<FundingMethod | null>(null)
   const [withdrawMethod, setWithdrawMethod] = useState('bank_transfer')
   const [withdrawNotes, setWithdrawNotes] = useState('')
   const [bankAccount, setBankAccount] = useState('')
@@ -247,6 +262,18 @@ export default function FundsPage() {
         console.error('Error fetching balance history:', e.response?.data ?? e.message ?? error)
         setBalanceHistory([])
       }
+
+      try {
+        const depositsResp = await apiClient.get(`/funds/account/${activeAccount.id}/deposits`)
+        if (depositsResp.success) {
+          setPendingDeposits(Array.isArray(depositsResp.data) ? depositsResp.data : [])
+        } else {
+          setPendingDeposits([])
+        }
+      } catch (err) {
+        console.error('Error fetching pending deposits', err)
+        setPendingDeposits([])
+      }
       
       try {
         const methodsResponse = await apiClient.get('/funds/methods')
@@ -254,6 +281,12 @@ export default function FundsPage() {
         if (methodsResponse.success && methodsResponse.data?.methods && Array.isArray(methodsResponse.data.methods)) {
           methodsData = methodsResponse.data.methods
           setFundingMethods(methodsData)
+          // pick a sensible default selection
+          if (methodsData.length > 0) {
+            const first = methodsData[0]
+            setDepositMethodId(String(first.id ?? first.name ?? first.type))
+            setSelectedGateway(first)
+          }
         }
       } catch (error: unknown) {
         const e = error as ApiError
@@ -314,7 +347,7 @@ export default function FundsPage() {
       const updateData = event.detail;
       console.log('Real-time balance update received in funds page:', updateData);
       
-      // Check if the update is for the current active account
+        // Check if the update is for the current active account
       if (activeAccount && updateData.accountId === activeAccount.id) {
         // Update the account stats immediately for real-time feel
         setAccountStats(prev => {
@@ -357,6 +390,16 @@ export default function FundsPage() {
             : `${updateData.changeType} of $${Math.abs(updateData.change).toFixed(2)} processed`,
           variant: updateData.change >= 0 ? "default" : "destructive"
         });
+
+        // If this update was an admin approval/rejection for deposit, refresh pending deposits
+        try {
+          if (updateData.reason === 'deposit_approved' || updateData.changeType === 'admin_deposit_approval') {
+            // refresh pending deposits and account stats
+            fetchData();
+          }
+        } catch (err) {
+          console.error('Error refreshing funds after deposit update', err)
+        }
       }
     };
 
@@ -367,7 +410,7 @@ export default function FundsPage() {
     return () => {
       window.removeEventListener('balanceUpdate', handleBalanceUpdate as EventListener);
     };
-  }, [activeAccount, toast]);
+  }, [activeAccount, toast, fetchData]);
 
   // Extracted submission logic so it can be triggered both from the form submit
   // and from a keyboard handler (Enter key) when the Select may have focus.
@@ -384,13 +427,22 @@ export default function FundsPage() {
       return
     }
 
-    try {
+      try {
+      // Ensure selectedGateway is populated if depositMethodId references a gateway id
+      if (!selectedGateway && depositMethodId) {
+        const found = (Array.isArray(fundingMethods) ? fundingMethods : []).find((m) => String(m.id) === String(depositMethodId) || String(m.type) === String(depositMethodId)) as FundingMethod | undefined
+        if (found) setSelectedGateway(found)
+      }
+
       setIsSubmitting(true)
-      const response = await apiClient.post('/funds/deposit', {
+      const methodToUse = selectedGateway?.type || depositMethodId || 'bank_transfer'
+      const payload = {
         accountId: activeAccount.id,
         amount: amount,
-        method: depositMethod
-      })
+        method: methodToUse
+      }
+      console.log('Submitting deposit payload', payload)
+      const response = await apiClient.post('/funds/deposit', payload)
 
       if (response.success) {
         toast({
@@ -634,6 +686,28 @@ export default function FundsPage() {
 
           {/* Action Buttons */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {pendingDeposits && pendingDeposits.length > 0 && (
+              <Card className="col-span-1 sm:col-span-2 bg-muted/5">
+                <CardHeader>
+                  <CardTitle className="text-base">Pending Deposit Requests</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {pendingDeposits.map((d) => (
+                      <div key={d.id} className="flex items-center justify-between px-2 py-2 rounded-md bg-background">
+                        <div>
+                          <div className="font-medium">Request: {d.transaction_id}</div>
+                          <div className="text-xs text-muted-foreground">Amount: ${Number(d.amount).toFixed(2)} • Fee: ${Number(d.fee || 0).toFixed(2)}</div>
+                        </div>
+                        <div className="text-sm">
+                          <span className={d.status === 'pending' ? 'text-yellow-600' : d.status === 'completed' ? 'text-green-600' : 'text-red-600'}>{d.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <Dialog open={isDepositModalOpen} onOpenChange={setIsDepositModalOpen}>
               <DialogTrigger asChild>
                 <Button className="h-14 text-base font-medium bg-primary hover:bg-primary/90 dark:bg-primary dark:hover:bg-primary/90 shadow-md hover:shadow-lg transition-all duration-200">
@@ -648,7 +722,7 @@ export default function FundsPage() {
                   </div>
                 </Button>
               </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-2xl max-w-[600px] max-h-[70vh] overflow-auto">
                   <DialogHeader className="text-center pb-2">
                     <div className="mx-auto mb-2 p-3 bg-primary/10 rounded-full w-fit">
                       <DownloadCloud className="h-6 w-6 text-primary" />
@@ -676,24 +750,67 @@ export default function FundsPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="deposit-method" className="text-sm font-medium">Payment Method</Label>
-                      <Select value={depositMethod} onValueChange={setDepositMethod}>
+                      <Select value={depositMethodId ?? ''} onValueChange={(val) => {
+                        setDepositMethodId(val)
+                        const found = (Array.isArray(fundingMethods) ? fundingMethods : []).find((m) => String(m.id) === String(val)) as FundingMethod | undefined
+                        setSelectedGateway(found ?? null)
+                      }}>
                         <SelectTrigger className="h-11">
                           <SelectValue placeholder="Select payment method" />
                         </SelectTrigger>
                         <SelectContent>
                           {(Array.isArray(fundingMethods) ? fundingMethods : []).map((method) => (
-                            <SelectItem key={method.type} value={method.type}>
-                              <div className="flex items-center gap-2">
-                                <span>{method.name}</span>
-                                <Badge variant="outline" className="text-xs">
-                                  {method.processingTime}
-                                </Badge>
+                            <SelectItem key={String(method.id ?? method.name)} value={String(method.id ?? method.name)}>
+                              <div className="flex items-center gap-3">
+                                <div className="flex-shrink-0 h-8 w-8 rounded-md bg-muted/10 flex items-center justify-center">
+                                  {method.icon_url ? (
+                                      <Image src={String(method.icon_url)} alt={method.display_name || method.name} width={24} height={24} className="object-contain" />
+                                    ) : (
+                                      <span className="text-xs font-medium">{(method.provider || method.type || method.name || '').slice(0,2).toUpperCase()}</span>
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                  <div className="text-sm font-medium">{method.display_name || method.name}</div>
+                                  <div className="text-xs text-muted-foreground">{method.processingTime || (method.processingTimeHours ? `${method.processingTimeHours} hours` : '')}</div>
+                                </div>
+                                {method.fees?.deposit ? (
+                                  <Badge variant="outline" className="text-xs">{method.fees?.deposit}</Badge>
+                                ) : null}
                               </div>
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
+                    {/* If selected gateway is UPI or provider === 'upi', show UPI pay panel */}
+                    {selectedGateway && (selectedGateway.provider === 'upi' || /upi/i.test(String(selectedGateway.name || selectedGateway.display_name || selectedGateway.provider))) && (
+                      <div className="rounded-lg border border-border/30 bg-muted/10 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold">Pay with UPI</div>
+                            <div className="text-xs text-muted-foreground">Use your UPI app (PhonePe, Google Pay, Paytm) to complete payment</div>
+                          </div>
+                          <div className="text-right text-xs text-muted-foreground">Instant</div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                          <div className="flex flex-col gap-2">
+                            <div className="text-xs text-muted-foreground">UPI ID</div>
+                            <div className="flex items-center gap-2">
+                              <input readOnly value={String(selectedGateway.configuration?.upiId ?? 'demo@upi')} className="w-full bg-background border border-border/20 rounded-md px-3 py-2 text-sm" />
+                              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard?.writeText(String(selectedGateway.configuration?.upiId ?? 'demo@upi')); toast({ title: 'Copied', description: 'UPI ID copied to clipboard' }) }}>Copy</Button>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-center">
+                            <div className="w-36 h-36 bg-white/5 rounded-md flex items-center justify-center border border-border/20">
+                              {/* QR Placeholder - in a real integration we'd render QR from gateway config */}
+                              <div className="text-xs text-muted-foreground">QR code</div>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-2">Scan to pay</div>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">After payment, your deposit request will appear as pending until admin confirms.</div>
+                      </div>
+                    )}
                     <DialogFooter className="gap-3 pt-4">
                       <DialogClose asChild>
                         <Button type="button" variant="outline" className="flex-1">
@@ -733,7 +850,7 @@ export default function FundsPage() {
                   </div>
                 </Button>
               </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-2xl max-w-[820px] max-h-[56vh] overflow-auto">
                   <DialogHeader className="text-center pb-2">
                     <div className="mx-auto mb-2 p-3 bg-muted/40 rounded-full w-fit">
                       <UploadCloud className="h-6 w-6 text-muted-foreground" />

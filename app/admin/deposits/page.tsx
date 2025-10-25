@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react"
+import { useAuth } from '@/contexts/AuthContext'
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { adminSidebarItems, adminTopBarConfig } from '@/config/admin-config'
 // Alert components intentionally removed from this file to reduce unused imports
@@ -16,18 +17,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+// Chart UI removed for deposit requests table
 import { useDebounce } from "@/hooks/use-debounce"
 import { useToast } from "@/components/ui/use-toast"
 import { adminService } from "@/lib/services"
 import {
-  AdminFundsChartPoint,
   AdminFundsOverview,
   AdminFundsTransactionRow,
   AdminUserAccountSummary,
   AdminUserDetail,
   AdminUserSummary,
-  
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import {
@@ -41,7 +40,7 @@ import {
   Users,
 } from "lucide-react"
 import { Loader2 } from "lucide-react"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
+// recharts removed
 
 const USER_REASON_DEFAULT = "manual_adjustment"
 const IB_REASON_DEFAULT = "ib_manual_adjustment"
@@ -60,12 +59,7 @@ const IB_REASON_OPTIONS = [
   { value: "rebate_adjustment", label: "Rebate adjustment" },
 ]
 
-const chartRangeOptions: Array<{ value: "7d" | "14d" | "30d" | "90d"; label: string }> = [
-  { value: "7d", label: "Last 7 days" },
-  { value: "14d", label: "Last 14 days" },
-  { value: "30d", label: "Last 30 days" },
-  { value: "90d", label: "Last 90 days" },
-]
+// chart range options were used by the removed chart UI
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -75,16 +69,7 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 
 const numberFormatter = new Intl.NumberFormat("en-US")
 
-const chartConfig = {
-  deposits: {
-    label: "Deposits",
-    color: "hsl(var(--chart-1))",
-  },
-  withdrawals: {
-    label: "Withdrawals",
-    color: "hsl(var(--chart-2))",
-  },
-}
+// chart config removed
 
 const statusStyles: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
@@ -137,10 +122,13 @@ export default function AdminDepositsPage() {
 
   const [overview, setOverview] = useState<AdminFundsOverview | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(true)
-  const [chartRange, setChartRange] = useState<"7d" | "14d" | "30d" | "90d">("30d")
-  const [chartData, setChartData] = useState<AdminFundsChartPoint[]>([])
-  const [chartLoading, setChartLoading] = useState(true)
-  const [yAxisWidth, setYAxisWidth] = useState(70)
+  // charting removed for deposit requests table
+
+  // Deposit requests (admin review)
+  const [depositRequests, setDepositRequests] = useState<AdminFundsTransactionRow[]>([])
+  const [depositRequestsLoading, setDepositRequestsLoading] = useState(true)
+  const [depositPage] = useState(1)
+  const [depositLimit] = useState(50)
 
   const [detailRow, setDetailRow] = useState<AdminFundsTransactionRow | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -169,7 +157,6 @@ export default function AdminDepositsPage() {
 
   const isMountedRef = useRef(true)
   const overviewRequestIdRef = useRef(0)
-  const chartRequestIdRef = useRef(0)
 
   const manualSearchHasQuery = manualSearch.trim().length > 0
   const manualResultsEmpty = !manualSearchLoading && manualSearchResults.length === 0
@@ -340,52 +327,9 @@ export default function AdminDepositsPage() {
     }
   }, [toast])
 
-  const loadChart = useCallback(
-    async (range: typeof chartRange) => {
-      const requestId = ++chartRequestIdRef.current
-      setChartLoading(true)
-      try {
-        const response = await adminService.getFundsChart(range)
-        if (!response.success || !response.data) {
-          throw new Error(response.message || "Unable to load cashflow chart")
-        }
-        if (!isMountedRef.current || requestId !== chartRequestIdRef.current) {
-          return
-        }
-        setChartData(response.data)
-      } catch (error) {
-        if (!isMountedRef.current || requestId !== chartRequestIdRef.current) {
-          return
-        }
-        const message = error instanceof Error ? error.message : "Unable to load cashflow chart"
-        toast({ variant: "destructive", title: "Chart unavailable", description: message })
-      } finally {
-        if (!isMountedRef.current || requestId !== chartRequestIdRef.current) {
-          return
-        }
-        setChartLoading(false)
-      }
-    },
-    [toast],
-  )
-
   useEffect(() => {
     loadOverview()
   }, [loadOverview])
-
-  useEffect(() => {
-    const update = () => {
-      if (typeof window === "undefined") return
-      setYAxisWidth(window.innerWidth < 640 ? 48 : 70)
-    }
-    update()
-    window.addEventListener("resize", update)
-    return () => window.removeEventListener("resize", update)
-  }, [])
-
-  useEffect(() => {
-    loadChart(chartRange)
-  }, [chartRange, loadChart])
 
   useEffect(() => {
     setManualSearch(debouncedManualSearch.trim())
@@ -480,15 +424,7 @@ export default function AdminDepositsPage() {
     ]
   }, [overview])
 
-  const normalizedChartData = useMemo(
-    () =>
-      chartData.map((point) => ({
-        date: formatChartDate(point.activityDate),
-        deposits: parseAmount(point.totalDeposits),
-        withdrawals: parseAmount(point.totalWithdrawals),
-      })),
-    [chartData],
-  )
+  // normalizedChartData removed (charting removed)
 
 
 
@@ -496,11 +432,69 @@ export default function AdminDepositsPage() {
 
 
 
+  const loadDepositRequests = useCallback(async (page = 1) => {
+    setDepositRequestsLoading(true)
+    try {
+      const resp = await adminService.getFundsTransactions({ type: 'deposits', page, limit: depositLimit, status: 'pending' })
+      if (!resp.success || !resp.data) throw new Error(resp.message || 'Unable to load deposit requests')
+      setDepositRequests(Array.isArray(resp.data.rows) ? resp.data.rows : (resp.data.transactions ?? []))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to load deposit requests'
+      toast({ variant: 'destructive', title: 'Failed to load deposits', description: message })
+    } finally {
+      setDepositRequestsLoading(false)
+    }
+  }, [depositLimit, toast])
+
+  // Load deposit requests on mount and when page changes — wait for auth to be initialized
+  const { isLoading: authLoading, isAuthenticated, user: authUser } = useAuth()
+
+  useEffect(() => {
+    // don't attempt fetch while auth is initializing
+    if (authLoading) return
+
+    // require authenticated admin to auto-load deposit requests
+    const hasAdminRole = !!(
+      authUser && (
+        (Array.isArray(authUser.roles) && authUser.roles.includes('admin')) ||
+        (typeof authUser.role === 'string' && authUser.role.toLowerCase() === 'admin')
+      )
+    )
+
+    if (!isAuthenticated || !hasAdminRole) {
+      // clear any stale state
+      setDepositRequests([])
+      setDepositRequestsLoading(false)
+      return
+    }
+
+    loadDepositRequests(depositPage)
+  }, [authLoading, isAuthenticated, authUser, loadDepositRequests, depositPage])
+
+  const processDepositAction = useCallback(
+    async (id: number, action: 'approve' | 'reject') => {
+      setDepositRequestsLoading(true)
+      try {
+        const resp = await adminService.processDeposit(id, action)
+        if (!resp.success) throw new Error(resp.message || 'Failed to process deposit')
+        toast({ title: `Deposit ${action}d`, description: `Deposit ${action} action completed` })
+        // refresh list and overview
+        await Promise.all([loadDepositRequests(depositPage), loadOverview()])
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to process deposit'
+        toast({ variant: 'destructive', title: 'Action failed', description: message })
+      } finally {
+        setDepositRequestsLoading(false)
+      }
+    },
+    [depositPage, loadDepositRequests, loadOverview, toast],
+  )
+
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await Promise.all([loadOverview(), loadChart(chartRange)])
-      toast({ title: "Data refreshed" })
+      await Promise.all([loadOverview(), loadDepositRequests(depositPage)])
+      toast({ title: 'Data refreshed' })
     } catch (error) {
       console.error(error)
     } finally {
@@ -712,58 +706,82 @@ export default function AdminDepositsPage() {
 
         <section className="grid gap-4 lg:grid-cols-3">
           <Card className="border-border/30 bg-card/70 lg:col-span-3">
-            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <CardHeader className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-base font-semibold">Deposit trend</CardTitle>
-                <p className="text-muted-foreground text-sm">
-                  Track incoming deposits over time.
-                </p>
+                <CardTitle className="text-base font-semibold">Deposit Requests</CardTitle>
+                <p className="text-muted-foreground text-sm">Pending deposit requests awaiting admin review.</p>
               </div>
-              <Select value={chartRange} onValueChange={(value) => setChartRange(value as typeof chartRange)}>
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue placeholder="Range" />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {chartRangeOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => loadDepositRequests()}>Refresh</Button>
+              </div>
             </CardHeader>
             <CardContent>
-              {chartLoading ? (
-                <div className="flex h-[260px] items-center justify-center">
-                  <Skeleton className="h-48 w-full" />
+              {depositRequestsLoading ? (
+                <div className="flex h-40 items-center justify-center">
+                  <Skeleton className="h-6 w-64" />
                 </div>
               ) : (
-                <ChartContainer config={chartConfig} className="h-[220px] sm:h-[280px] w-full aspect-auto max-w-full overflow-hidden">
-                  <AreaChart data={normalizedChartData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                    <XAxis dataKey="date" tickLine={false} axisLine={false} />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) => currencyFormatter.format(value).replace("$", "")}
-                      width={yAxisWidth}
-                    />
-                    <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                    <Area
-                      type="monotone"
-                      dataKey="deposits"
-                      name="Deposits"
-                      stroke="var(--color-deposits)"
-                      fill="var(--color-deposits)"
-                      fillOpacity={0.2}
-                    />
-                    <ChartLegend content={<ChartLegendContent />} />
-                  </AreaChart>
-                </ChartContainer>
+                <div className="overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Txn</TableHead>
+                        <TableHead>Account</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead className="text-right">Fee</TableHead>
+                        <TableHead className="text-right">Net</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {depositRequests.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center text-muted-foreground py-6">No pending deposit requests</TableCell>
+                        </TableRow>
+                      ) : (
+                        depositRequests.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell>{row.transaction_id || `#${row.id}`}</TableCell>
+                            <TableCell>{row.account_number}</TableCell>
+                            <TableCell>{row.user_name ? `${row.user_name} · ${row.email}` : row.email}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(row.fee)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(row.net_amount ?? row.amount)}</TableCell>
+                            <TableCell><span className={cn("px-2 py-1 rounded-full text-xs", getStatusBadge(row.status))}>{row.status}</span></TableCell>
+                            <TableCell>{formatDateTime(row.created_at)}</TableCell>
+                            <TableCell className="pr-2">
+                              <div className="flex items-center gap-2">
+                                <Button variant="ghost" size="sm" onClick={() => setDetailRow(row)}>View</Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => processDepositAction(row.id, 'approve')}
+                                  disabled={row.status !== 'pending' || depositRequestsLoading}
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => processDepositAction(row.id, 'reject')}
+                                  disabled={row.status !== 'pending' || depositRequestsLoading}
+                                >
+                                  Reject
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
-
         </section>
 
         <Card id="manual-fund-adjustment" className="border-dashed border-border/40 bg-muted/10">
@@ -1240,11 +1258,7 @@ export default function AdminDepositsPage() {
   )
 }
 
-function formatChartDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString()
-}
+// formatChartDate removed (charting removed)
 
 function DetailRow({
   label,

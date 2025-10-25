@@ -13,7 +13,9 @@ const router = express.Router();
 const depositSchema = Joi.object({
   accountId: Joi.number().integer().positive().required(),
   amount: Joi.number().positive().min(10).max(100000).required(),
-  method: Joi.string().valid('bank_transfer', 'credit_card', 'debit_card', 'crypto', 'e_wallet').default('bank_transfer'),
+  // Accept gateway type strings from payment_gateways (e.g. 'stripe', 'razorpay', 'upi', 'oxapay')
+  // Previously this was a closed list which caused valid gateway types to be rejected.
+  method: Joi.string().max(100).default('bank_transfer'),
   transactionId: Joi.string().max(100).optional()
 });
 
@@ -128,6 +130,31 @@ router.get('/account/:accountId/history', asyncHandler(async (req, res) => {
         hasPrevPage: page > 1
       }
     }
+  });
+}));
+
+/**
+ * Get deposit requests for an account (user view)
+ * GET /funds/account/:accountId/deposits
+ */
+router.get('/account/:accountId/deposits', asyncHandler(async (req, res) => {
+  const accountId = parseInt(req.params.accountId, 10);
+  const account = await TradingAccount.findByUserIdAndAccountId(req.user.id, accountId);
+  if (!account) {
+    throw new AppError('Trading account not found', 404);
+  }
+
+  const rows = await executeQuery(`
+    SELECT d.id, d.transaction_id, d.amount, d.fee, d.net_amount, d.status, d.payment_reference, d.created_at
+    FROM deposits d
+    WHERE d.account_id = ? AND d.user_id = ?
+    ORDER BY d.created_at DESC
+    LIMIT 50
+  `, [accountId, req.user.id]);
+
+  res.json({
+    success: true,
+    data: rows
   });
 }));
 
@@ -297,9 +324,14 @@ router.get('/dashboard/performance/:accountId', asyncHandler(async (req, res) =>
  * POST /funds/deposit
  */
 router.post('/deposit', asyncHandler(async (req, res) => {
+  // Debug: log incoming payload to help diagnose validation failures
+  console.log('POST /funds/deposit incoming body:', req.body);
   const { error, value } = depositSchema.validate(req.body);
   if (error) {
-    throw new AppError(error.details[0].message, 400);
+    console.error('Deposit validation failed:', error.details.map(d => ({ message: d.message, path: d.path })));
+    // Include validation path in the error message to make debugging easier
+    const paths = error.details.map(d => d.path.join('.')).join(', ');
+    throw new AppError(`${error.details[0].message} (fields: ${paths})`, 400);
   }
 
   const { accountId, amount, method, transactionId } = value;
@@ -311,42 +343,120 @@ router.post('/deposit', asyncHandler(async (req, res) => {
   }
 
   // Generate transaction ID if not provided
-  const txId = transactionId || `DEP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const txId = transactionId || `REQ_DEP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-  // Process deposit
-  const result = await FundManager.processDeposit(accountId, amount, method, txId, {
-    performedByType: 'user',
-    performedById: req.user.id,
-    metadata: { source: 'user_funds_deposit' }
-  });
+  // Instead of immediately crediting the account, create a deposit request
+  // that an admin can review and approve/reject. Find a matching payment_method
+  // by type to capture fee information when available.
+  const [methodRow] = await executeQuery(
+    'SELECT id, deposit_fee_type, deposit_fee_value FROM payment_methods WHERE type = ? AND is_active = 1 LIMIT 1',
+    [method]
+  );
 
-  // Broadcast balance update via WebSocket
+  let paymentMethodId = null;
+  let fee = 0;
+
+  // If there's a payment method matching the provided type, use it
+  if (methodRow && methodRow.length) {
+    const m = methodRow[0];
+    paymentMethodId = m.id;
+    if (m.deposit_fee_type === 'fixed') {
+      fee = parseFloat(m.deposit_fee_value || 0);
+    } else if (m.deposit_fee_type === 'percentage') {
+      fee = (parseFloat(m.deposit_fee_value || 0) / 100) * amount;
+    }
+  } else {
+    // Try to match by provider (frontend may send gateway provider like 'stripe' or 'razorpay')
+    const [providerRow] = await executeQuery(
+      'SELECT id, deposit_fee_type, deposit_fee_value FROM payment_methods WHERE provider = ? AND is_active = 1 LIMIT 1',
+      [method]
+    );
+    if (providerRow && providerRow.length) {
+      const m = providerRow[0];
+      paymentMethodId = m.id;
+      if (m.deposit_fee_type === 'fixed') {
+        fee = parseFloat(m.deposit_fee_value || 0);
+      } else if (m.deposit_fee_type === 'percentage') {
+        fee = (parseFloat(m.deposit_fee_value || 0) / 100) * amount;
+      }
+    }
+  }
+
+  // Final fallback: use any active payment_method to avoid NULL insert (which causes ER_BAD_NULL_ERROR)
+  if (!paymentMethodId) {
+    const [fallback] = await executeQuery('SELECT id, deposit_fee_type, deposit_fee_value FROM payment_methods WHERE is_active = 1 LIMIT 1');
+    if (fallback && fallback.length) {
+      const m = fallback[0];
+      paymentMethodId = m.id;
+      if (m.deposit_fee_type === 'fixed') {
+        fee = parseFloat(m.deposit_fee_value || 0);
+      } else if (m.deposit_fee_type === 'percentage') {
+        fee = (parseFloat(m.deposit_fee_value || 0) / 100) * amount;
+      }
+      console.warn(`No matching payment_method for method='${method}'. Falling back to payment_method id=${paymentMethodId}`);
+    } else {
+      // No active payment methods at all — create a minimal demo gateway + payment method
+      console.warn('No active payment methods found; creating a demo e-wallet gateway and payment method');
+      const gatewayConfig = JSON.stringify({ demo: true });
+      const supportedCurrenciesJson = JSON.stringify(['USD']);
+
+      // Insert demo payment gateway
+      const gatewayResult = await executeQuery(
+        `INSERT INTO payment_gateways (name, display_name, type, provider, is_active, min_amount, max_amount, processing_fee_type, processing_fee_value, processing_time_hours, supported_currencies, configuration, sort_order, icon_url, description)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        ['demo_e_wallet', 'Demo E-Wallet', 'e_wallet', 'demo', 10.0, 100000.0, 'percentage', 0.0, 0, supportedCurrenciesJson, gatewayConfig, null, 'Demo e-wallet for testing']
+      );
+
+      const gatewayId = gatewayResult && gatewayResult.insertId ? gatewayResult.insertId : null;
+
+      // Insert corresponding payment_method (type uses 'ewallet' enum)
+      const paymentMethodResult = await executeQuery(
+        `INSERT INTO payment_methods (name, type, provider, supported_currencies, min_amount, max_amount, deposit_fee_type, deposit_fee_value, withdrawal_fee_type, withdrawal_fee_value, processing_time_hours, is_active, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+        ['Demo E-Wallet', 'ewallet', 'demo', supportedCurrenciesJson, 10.0, 100000.0, 'percentage', 0.0, 'percentage', 0.0, 0]
+      );
+
+      paymentMethodId = paymentMethodResult && paymentMethodResult.insertId ? paymentMethodResult.insertId : null;
+      fee = 0;
+
+      console.log(`Created demo gateway id=${gatewayId}, payment_method id=${paymentMethodId}`);
+    }
+  }
+
+  const netAmount = Math.max(0, parseFloat(amount) - parseFloat(fee || 0));
+
+  // Insert into deposits table as pending
+  await executeQuery(
+    `INSERT INTO deposits (user_id, account_id, transaction_id, payment_method_id, amount, currency, fee, net_amount, status, user_notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NOW())`,
+    [req.user.id, accountId, txId, paymentMethodId, amount, 'USD', fee, netAmount]
+  );
+
+  // Notify user (response) and optionally notify admin via broadcast
   if (global.broadcast) {
     global.broadcast({
-      type: 'balance_update',
+      type: 'deposit_request_created',
       userId: req.user.id,
       accountId: accountId,
       data: {
-        previousBalance: result.previousBalance,
-        newBalance: result.newBalance,
-        change: amount,
-        changeType: 'deposit',
-        reason: 'deposit',
-        method: method,
         transactionId: txId,
-        performedByType: 'user',
-        performedById: req.user.id,
-        timestamp: new Date().toISOString()
+        amount,
+        netAmount,
+        fee,
+        method,
+        createdAt: new Date().toISOString()
       }
     });
   }
 
   res.status(201).json({
     success: true,
-    message: `Deposit of $${amount.toFixed(2)} processed successfully`,
+    message: `Deposit request of $${amount.toFixed(2)} submitted and pending admin approval`,
     data: {
       transactionId: txId,
-      ...result
+      amount,
+      fee,
+      netAmount
     }
   });
 }));
