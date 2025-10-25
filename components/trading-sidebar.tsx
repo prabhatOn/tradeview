@@ -14,6 +14,7 @@ import {
   User,
   ChevronLeft,
   ChevronRight,
+  Star,
 } from "lucide-react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
@@ -118,8 +119,9 @@ export function TradingSidebar({ className, collapsed = false, onCollapsedChange
 
   const pathname = usePathname() || "/"
 
-  // Mobile primary items: Dashboard, Positions, Funds (user requested)
-  const mobilePrimary = [sidebarItems[0], sidebarItems[1], sidebarItems[3]]
+  // Mobile primary items: Dashboard, Watchlist (mobile only), Positions, Funds
+  const watchlistItem = { title: 'Watchlist', icon: Star, href: '/mobile/watchlist' }
+  const mobilePrimary = [sidebarItems[0], watchlistItem, sidebarItems[1], sidebarItems[3]]
   const mobileMore = sidebarItems.filter((it) => !mobilePrimary.includes(it))
 
   return (

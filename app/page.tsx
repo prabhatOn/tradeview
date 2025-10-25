@@ -29,7 +29,7 @@ export default function TradingDashboard() {
           {/* Main Content */}
           <main
             className={`flex-1 flex flex-col overflow-auto transition-all duration-300 w-full ${
-              sidebarCollapsed ? "sm:pl-20 pl-0 pr-4 pt-4 pb-10 sm:pb-28" : "sm:pl-68 pl-0 pr-4 pt-4 pb-10 sm:pb-28"
+              sidebarCollapsed ? "sm:pl-20 pl-4 pr-4 pt-4 pb-10 sm:pb-28" : "sm:pl-68 pl-4 pr-4 pt-4 pb-10 sm:pb-28"
             }`}
           >
             {/* Notifications Section removed per request */}
@@ -43,17 +43,6 @@ export default function TradingDashboard() {
               <div className="h-full w-full flex flex-col lg:flex-row">
                 {/* Chart column */}
                 <div className={`transition-all duration-300 relative ${isWishlistOpen ? 'lg:w-3/4 lg:h-full h-full' : 'w-full h-full'}`}>
-                  {/* Mobile wishlist toggle button */}
-                  <div className="lg:hidden absolute top-2 right-2 z-50">
-                    <button
-                      type="button"
-                      aria-label="Toggle watchlist"
-                      onClick={() => setIsWishlistOpen(!isWishlistOpen)}
-                      className="h-8 w-8 rounded bg-card/80 backdrop-blur shadow-md hover:bg-card/90 transition-all flex items-center justify-center"
-                    >
-                      <ChevronLeft className={`w-4 h-4 transition-transform ${isWishlistOpen ? 'rotate-90' : '-rotate-90'}`} />
-                    </button>
-                  </div>
                   <TradingChart key={isWishlistOpen ? 'split' : 'full'} />
                 </div>
 
@@ -76,8 +65,8 @@ export default function TradingDashboard() {
                   )}
                 </div>
 
-                {/* Wishlist column - inline on mobile and lg, overlay on md */}
-                  <div className={`transition-all duration-300 ${isWishlistOpen ? 'lg:w-1/4' : 'w-0 overflow-hidden'}`} style={isWishlistOpen ? { height: '100%' } : undefined}>
+                {/* Wishlist column - only visible on large screens (hidden on mobile) */}
+                <div className={`hidden lg:block transition-all duration-300 ${isWishlistOpen ? 'lg:w-1/4' : 'w-0 overflow-hidden'}`} style={isWishlistOpen ? { height: '100%' } : undefined}>
                   <WishlistPanel isOpen={isWishlistOpen} onClose={() => setIsWishlistOpen(false)} inline={true} />
                 </div>
               </div>

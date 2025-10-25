@@ -565,8 +565,8 @@ function PositionsTable() {
     <Card className="h-full">
       <CardContent className="p-0">
         <Tabs defaultValue="open" className="h-full">
-          <div className="flex items-center justify-between p-3 border-b">
-            <TabsList className="grid w-full max-w-[500px] grid-cols-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border-b gap-2">
+              <TabsList className="grid w-full grid-cols-3 sm:max-w-[500px] gap-1">
               <TabsTrigger value="open">Open ({openPositions.length})</TabsTrigger>
               <TabsTrigger value="pending">Pending ({pendingPositions.length})</TabsTrigger>
               <TabsTrigger value="history">History ({closedPositions.length})</TabsTrigger>
@@ -615,32 +615,56 @@ function PositionsTable() {
             ) : (
               <>
                 {/* Mobile card list: visible on small screens */}
-                <div className="sm:hidden p-2 space-y-3 max-h-[60vh] overflow-auto">
+                <div className="sm:hidden p-2 space-y-3 max-h-[70vh] overflow-auto pb-24">
                   {openPositions.map((position: Position) => (
-                    <Card key={position.id} className="p-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <div className="font-semibold">{position.symbol}</div>
+                    <Card key={position.id} className="p-4 min-h-[120px]">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="font-semibold text-lg">{position.symbol}</div>
                             <Badge variant={position.status === 'open' ? 'default' : 'secondary'}>
                               {position.status}
                             </Badge>
                           </div>
-                          <div className="text-xs text-muted-foreground mt-1">#{position.id} • {position.side?.toUpperCase() || 'UNKNOWN'} • {position.volume ?? position.lotSize} lots</div>
+                          <div className="text-right">
+                            <div className={`font-mono text-lg font-semibold ${getPnLColor(position.unrealizedPnl ?? position.profit ?? 0)}`}>
+                              {formatPnL(position.unrealizedPnl ?? position.profit ?? 0)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">#{position.id}</div>
+                          </div>
                         </div>
 
-                        <div className="text-right">
-                          <div className={`font-mono font-semibold ${getPnLColor(position.unrealizedPnl ?? position.profit ?? 0)}`}>
-                            {formatPnL(position.unrealizedPnl ?? position.profit ?? 0)}
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div className="space-y-1">
+                            <div className="text-muted-foreground text-xs">Type</div>
+                            <div className="font-semibold">{position.side?.toUpperCase() || 'UNKNOWN'}</div>
+                            <div className="text-muted-foreground text-xs mt-2">Lots</div>
+                            <div className="font-mono">{position.volume ?? position.lotSize}</div>
                           </div>
-                          <div className="flex items-center justify-end gap-2 mt-3">
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setPartialCloseModal(position)}>
+
+                          <div className="space-y-1 text-right">
+                            <div className="text-muted-foreground text-xs">Open</div>
+                            <div className="font-mono">{formatPrice(position.openPrice)}</div>
+                            <div className="text-muted-foreground text-xs mt-2">Current</div>
+                            <div className="font-mono">{position.currentPrice ? formatPrice(position.currentPrice) : '-'}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 text-sm">
+                            <div className="text-muted-foreground">S/L: <span className="font-mono">{position.stopLoss ? formatPrice(position.stopLoss) : '-'}</span></div>
+                            <div className="text-muted-foreground">T/P: <span className="font-mono">{position.takeProfit ? formatPrice(position.takeProfit) : '-'}</span></div>
+                            <div className="text-muted-foreground">Swap: <span className="font-mono">{formatPnL(position.swap)}</span></div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="ghost" className="h-9 w-9 p-0" onClick={() => setPartialCloseModal(position)}>
                               <Scissors className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setDetailsModalPosition(position)}>
+                            <Button size="sm" variant="ghost" className="h-9 w-9 p-0" onClick={() => setDetailsModalPosition(position)}>
                               <Info className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleClosePosition(position.id)} disabled={closingPositions.has(position.id)}>
+                            <Button size="sm" variant="ghost" className="h-9 w-9 p-0" onClick={() => handleClosePosition(position.id)} disabled={closingPositions.has(position.id)}>
                               {closingPositions.has(position.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
                             </Button>
                           </div>
@@ -693,23 +717,39 @@ function PositionsTable() {
               </div>
             ) : (
               <>
-                <div className="sm:hidden p-2 space-y-3 max-h-[40vh] overflow-auto">
+                <div className="sm:hidden p-2 space-y-3 max-h-[50vh] overflow-auto pb-24">
                   {pendingPositions.map((position: Position) => (
-                    <Card key={position.id} className="p-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="font-semibold">{position.symbol}</div>
-                          <div className="text-xs text-muted-foreground mt-1">#{position.id} • {position.side?.toUpperCase() || 'UNKNOWN'}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className={`font-mono font-semibold ${getPnLColor(position.profit || 0)}`}>
+                    <Card key={position.id} className="p-4 min-h-[110px]">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-semibold text-lg">{position.symbol}</div>
+                            <div className="text-xs text-muted-foreground mt-1">#{position.id} • {position.side?.toUpperCase() || 'UNKNOWN'}</div>
+                          </div>
+                          <div className={`font-mono text-lg font-semibold ${getPnLColor(position.profit || 0)}`}>
                             {formatPnL(position.profit || 0)}
                           </div>
-                          <div className="flex items-center justify-end gap-2 mt-3">
-                            <Button variant="ghost" size="sm" onClick={refetch} className="h-8 w-8 p-0" title="Refresh">
-                              <RefreshCw className="h-4 w-4" />
-                            </Button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div className="space-y-1">
+                            <div className="text-muted-foreground text-xs">Lots</div>
+                            <div className="font-mono">{position.volume ?? position.lotSize}</div>
+                            <div className="text-muted-foreground text-xs mt-2">Trigger</div>
+                            <div className="font-mono">{position.triggerPrice ?? '-'}</div>
                           </div>
+                          <div className="space-y-1 text-right">
+                            <div className="text-muted-foreground text-xs">Time</div>
+                            <div className="text-xs">{position.openTime ? new Date(position.openTime).toLocaleTimeString() : '-'}</div>
+                            <div className="text-muted-foreground text-xs mt-2">Status</div>
+                            <div className="text-xs">{position.status}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end">
+                          <Button variant="ghost" size="sm" onClick={refetch} className="h-9 w-9 p-0" title="Refresh">
+                            <RefreshCw className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     </Card>
@@ -784,13 +824,12 @@ function PositionsTable() {
               </div>
             ) : (
               <>
-                <div className="sm:hidden p-2 space-y-3 max-h-[50vh] overflow-auto">
-                  {closedPositions.map((position: Position) => {
-                    const openTime = position.openTime || position.openedAt
-                    const closeTime = position.closeTime || position.closedAt
-                    const positionType = position.positionType || position.side
-                    const volume = position.volume || position.lotSize
-                    const pnl = position.profitLoss || position.profit
+                <div className="sm:hidden p-2 space-y-3 max-h-[60vh] overflow-auto pb-24">
+          {closedPositions.map((position: Position) => {
+            const openTime = position.openTime || position.openedAt
+            const closeTime = position.closeTime || position.closedAt
+            const positionType = position.positionType || position.side
+            const pnl = position.profitLoss || position.profit
 
                     const duration = closeTime && openTime
                       ? new Date(closeTime).getTime() - new Date(openTime).getTime()
@@ -798,15 +837,29 @@ function PositionsTable() {
                     const durationText = duration > 0 ? `${Math.floor(duration / (1000 * 60))}m` : '-'
 
                     return (
-                      <Card key={position.id} className="p-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="font-semibold">{position.symbol}</div>
-                            <div className="text-xs text-muted-foreground mt-1">#{position.id} • {positionType?.toUpperCase() || 'UNKNOWN'} • {volume}</div>
+                      <Card key={position.id} className="p-4 min-h-[110px]">
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-semibold text-lg">{position.symbol}</div>
+                              <div className="text-xs text-muted-foreground mt-1">#{position.id} • {positionType?.toUpperCase() || 'UNKNOWN'}</div>
+                            </div>
+                            <div className={`font-mono text-lg font-semibold ${getPnLColor(pnl)}`}>{formatPnL(pnl)}</div>
                           </div>
-                          <div className="text-right">
-                            <div className={`font-mono font-semibold ${getPnLColor(pnl)}`}>{formatPnL(pnl)}</div>
-                            <div className="text-xs text-muted-foreground">{durationText}</div>
+
+                          <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <div className="text-muted-foreground text-xs">Open</div>
+                              <div className="font-mono">{formatPrice(position.openPrice)}</div>
+                              <div className="text-muted-foreground text-xs mt-2">Close</div>
+                              <div className="font-mono">{position.closePrice ? formatPrice(position.closePrice) : '-'}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-muted-foreground text-xs">Duration</div>
+                              <div className="text-xs text-muted-foreground">{durationText}</div>
+                              <div className="text-muted-foreground text-xs mt-2">S/L</div>
+                              <div className="font-mono">{position.stopLoss ? formatPrice(position.stopLoss) : '-'}</div>
+                            </div>
                           </div>
                         </div>
                       </Card>
