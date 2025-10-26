@@ -5,7 +5,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const Joi = require('joi');
 const { executeQuery } = require('../config/database');
-const { generateToken, authMiddleware } = require('../middleware/auth');
+const { generateAccessToken, generateRefreshToken, authMiddleware } = require('../middleware/auth');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const User = require('../models/User');
 const IntroducingBrokerService = require('../services/IntroducingBrokerService');
@@ -136,8 +136,9 @@ router.post('/register', asyncHandler(async (req, res) => {
     }
   }
 
-  // Generate JWT token
-  const token = generateToken(user.id);
+  // Generate access and refresh tokens
+  const accessToken = generateAccessToken(user.id);
+  const refreshToken = generateRefreshToken(user.id);
 
   res.status(201).json({
     success: true,
@@ -145,8 +146,8 @@ router.post('/register', asyncHandler(async (req, res) => {
     data: {
       user: user.toJSON(),
       tokens: {
-        accessToken: token,
-        refreshToken: token, // For now, using same token - should be separate in production
+        accessToken,
+        refreshToken,
         expiresIn: 24 * 60 * 60 // 24 hours in seconds
       }
     }
@@ -183,8 +184,9 @@ router.post('/login', asyncHandler(async (req, res) => {
   // Update last login
   await user.updateLastLogin();
 
-  // Generate JWT token
-  const token = generateToken(user.id);
+  // Generate access and refresh tokens
+  const accessToken = generateAccessToken(user.id);
+  const refreshToken = generateRefreshToken(user.id);
 
   res.json({
     success: true,
@@ -192,8 +194,8 @@ router.post('/login', asyncHandler(async (req, res) => {
     data: {
       user: user.toJSON(),
       tokens: {
-        accessToken: token,
-        refreshToken: token, // For now, using same token - should be separate in production
+        accessToken,
+        refreshToken,
         expiresIn: 24 * 60 * 60 // 24 hours in seconds
       }
     }
@@ -203,17 +205,15 @@ router.post('/login', asyncHandler(async (req, res) => {
 // Get current user profile
 router.get('/me', asyncHandler(async (req, res) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
-  
+
   if (!token) {
     throw new AppError('Access denied. No token provided.', 401);
   }
 
-  const jwt = require('jsonwebtoken');
-  const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
-  
+  const { verifyAccessToken } = require('../middleware/auth');
+
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    
+    const decoded = verifyAccessToken(token);
     const user = await User.findById(decoded.userId);
     if (!user) {
       throw new AppError('User not found', 404);

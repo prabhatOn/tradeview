@@ -2,31 +2,41 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const mysql = require('mysql2/promise');
 
-// Database configuration
+// Database configuration - read ONLY from environment variables.
+// This file intentionally does not provide fallback defaults. All required
+// values must be supplied via environment variables (or a .env file).
+// DB_PASSWORD may be an empty string in dev, but the variable must be defined.
+const requiredEnv = ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
+const missing = requiredEnv.filter((k) => typeof process.env[k] === 'undefined');
+if (missing.length) {
+  throw new Error(
+    `Missing required database environment variables: ${missing.join(', ')}.\n` +
+      'Please set these in your environment or copy .env.example to .env and edit values.'
+  );
+}
 
 const dbConfig = {
-  host: '127.0.0.1',
-  port: 3306,
-  user: 'root',
-  password: '',
-  database: 'pro2',
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT, 10),
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   idleTimeout: 300000,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  timezone: '+00:00',
+  timezone: process.env.DB_TIMEZONE || '+00:00',
   dateStrings: false,
   supportBigNumbers: true,
   bigNumberStrings: true,
   multipleStatements: false
 };
 
-console.log('Database config loaded:');
-console.log('Host:', dbConfig.host);
-console.log('User:', dbConfig.user);
-console.log('Database:', dbConfig.database);
+// Minimal, non-sensitive startup logging
+console.log(`Database host: ${dbConfig.host}`);
+console.log(`Database name: ${dbConfig.database}`);
 
 // Create connection pool
 let pool;
@@ -94,6 +104,10 @@ async function executeQuery(sql, params = []) {
       }
     }
     
+    // Replace undefined with null to avoid driver errors
+    if (Array.isArray(params) && params.length > 0) {
+      params = params.map((p) => (p === undefined ? null : p));
+    }
     const [rows] = await pool.execute(sql, params);
     return rows;
   } catch (error) {
@@ -120,7 +134,8 @@ async function executeTransaction(callbackOrQueries) {
       result = [];
       for (const query of callbackOrQueries) {
         if (typeof query === 'object' && query.sql && query.params) {
-          const [queryResult] = await connection.execute(query.sql, query.params);
+          const safeParams = Array.isArray(query.params) ? query.params.map(p => p === undefined ? null : p) : query.params
+          const [queryResult] = await connection.execute(query.sql, safeParams);
           result.push(queryResult);
         } else {
           throw new Error('Invalid query object in array');
@@ -155,7 +170,8 @@ async function executeTransactionQueries(queries) {
     
     const results = [];
     for (const query of queries) {
-      const [result] = await connection.execute(query.sql, query.params);
+      const safeParams = Array.isArray(query.params) ? query.params.map(p => p === undefined ? null : p) : query.params
+      const [result] = await connection.execute(query.sql, safeParams);
       results.push(result);
     }
     

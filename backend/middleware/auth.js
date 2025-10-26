@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { executeQuery } = require('../config/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || 'your-super-secret-refresh-token-change-in-production';
 
 const normalizeRoles = (roles) => {
   if (!roles) return [];
@@ -83,7 +84,7 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+  const decoded = verifyAccessToken(token);
     const user = await fetchUserById(decoded.userId);
 
     if (!user) {
@@ -169,7 +170,7 @@ const optionalAuth = async (req, res, next) => {
       return next();
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+  const decoded = verifyAccessToken(token);
     const user = await fetchUserById(decoded.userId);
 
     if (user) {
@@ -185,19 +186,30 @@ const optionalAuth = async (req, res, next) => {
   }
 };
 
-// Generate JWT token
-const generateToken = (userId) =>
-  jwt.sign({ userId }, JWT_SECRET, {
+// Generate access token
+const generateAccessToken = (userId) =>
+  jwt.sign({ userId, type: 'access' }, JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   });
 
-// Verify JWT token
-const verifyToken = (token) => jwt.verify(token, JWT_SECRET);
+// Generate refresh token (signed with different secret)
+const generateRefreshToken = (userId) =>
+  jwt.sign({ userId, type: 'refresh' }, REFRESH_TOKEN_SECRET, {
+    expiresIn: process.env.REFRESH_EXPIRES_IN || '30d',
+  });
+
+// Verify access token
+const verifyAccessToken = (token) => jwt.verify(token, JWT_SECRET);
+
+// Verify refresh token
+const verifyRefreshToken = (token) => jwt.verify(token, REFRESH_TOKEN_SECRET);
 
 module.exports = {
   authMiddleware,
   adminMiddleware,
   optionalAuth,
-  generateToken,
-  verifyToken,
+  generateAccessToken,
+  generateRefreshToken,
+  verifyAccessToken,
+  verifyRefreshToken,
 };

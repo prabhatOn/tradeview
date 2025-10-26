@@ -2,12 +2,10 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 require('dotenv').config({ path: './.env' });
 
-// Debug environment variables
-console.log('Environment variables loaded:');
-console.log('DB_HOST:', process.env.DB_HOST);
-console.log('DB_USER:', process.env.DB_USER);
-console.log('DB_PASSWORD:', '***' + (process.env.DB_PASSWORD ? process.env.DB_PASSWORD.slice(-2) : 'undefined'));
-console.log('DB_NAME:', process.env.DB_NAME);
+// Minimal environment debug - DO NOT log secrets in production
+console.log('Environment variables loaded (masked)');
+console.log('DB_HOST:', process.env.DB_HOST || 'localhost');
+console.log('DB_NAME:', process.env.DB_NAME || 'pro2');
 
 const express = require('express');
 const cors = require('cors');
@@ -83,10 +81,19 @@ const devOrigins = Array.from(
   ]),
 );
 
+// CORS: allowlist can be configured with ALLOWED_ORIGINS env var (comma-separated)
+const allowedFromEnv = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean) : null
+const originList = process.env.NODE_ENV === 'production' ? (allowedFromEnv || ['https://your-domain.com']) : (allowedFromEnv || devOrigins)
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-domain.com'] 
-    : devOrigins,
+  origin: function(origin, callback) {
+    // allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true)
+    if (originList.indexOf(origin) !== -1) {
+      return callback(null, true)
+    }
+    return callback(new Error('CORS policy: Origin not allowed'))
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -108,6 +115,10 @@ app.use(compression());
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Input sanitization middleware (basic)
+const requestSanitizer = require('./middleware/sanitizer');
+app.use(requestSanitizer);
 
 // Serve uploaded files and mark resources as cross-origin so dev frontend (localhost:3000)
 // can load images directly from backend without CORP blocking.
